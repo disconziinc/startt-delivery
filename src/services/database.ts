@@ -67,8 +67,18 @@ function withDefaults(parsed: Partial<MockDatabaseState> = {}): MockDatabaseStat
     ...user,
     is_active: user.is_active ?? true,
   }));
+  const delivery_zones = [
+    ...(parsed.delivery_zones || []),
+    ...initialMockDatabase.delivery_zones.filter((seedZone) => !(parsed.delivery_zones || []).some((zone) => zone.company_id === seedZone.company_id && zone.neighborhood.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() === seedZone.neighborhood.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase())),
+  ];
+  const orders = (parsed.orders || initialMockDatabase.orders).map((order, index) => ({
+    ...order,
+    order_number: order.order_number || 10000 + index + 1,
+    cash_change_for: order.cash_change_for || 0,
+    calculated_change: order.calculated_change || 0,
+  }));
 
-  return { ...initialMockDatabase, ...parsed, plans, companies, products, master_users };
+  return { ...initialMockDatabase, ...parsed, plans, companies, products, master_users, delivery_zones, orders };
 }
 
 function readFallbackSnapshot(): MockDatabaseState {

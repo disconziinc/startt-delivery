@@ -160,6 +160,7 @@ create table if not exists coupons (
 
 create table if not exists orders (
   id text primary key,
+  order_number integer,
   company_id text not null references companies(id) on delete cascade,
   customer_id text not null references customers(id) on delete cascade,
   status order_status not null default 'novo',
@@ -170,8 +171,12 @@ create table if not exists orders (
   delivery_fee numeric(10,2) not null default 0,
   total numeric(10,2) not null default 0,
   payment_method text not null,
+  cash_change_for numeric(10,2) default 0,
+  calculated_change numeric(10,2) default 0,
   created_at timestamptz not null default now()
 );
+
+create unique index if not exists orders_company_order_number_idx on orders(company_id, order_number) where order_number is not null;
 
 create table if not exists order_items (
   id text primary key,

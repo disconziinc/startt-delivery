@@ -147,6 +147,7 @@ export type OrderItem = {
 
 export type Order = {
   id: ID;
+  order_number?: number;
   company_id: ID;
   customer_id: ID;
   status: OrderStatus;
@@ -157,6 +158,8 @@ export type Order = {
   delivery_fee: number;
   total: number;
   payment_method: PaymentMethod;
+  cash_change_for?: number;
+  calculated_change?: number;
   created_at: string;
 };
 
@@ -225,6 +228,31 @@ export type MockDatabaseState = {
 const now = "2026-04-26T12:00:00.000Z";
 const yesterday = "2026-04-25T12:00:00.000Z";
 const monthStart = "2026-04-01T12:00:00.000Z";
+const portoAlegreNeighborhoods = [
+  "Aberta dos Morros", "Agronomia", "Anchieta", "Arquipélago", "Auxiliadora", "Azenha", "Bela Vista", "Belém Novo", "Belém Velho", "Boa Vista", "Boa Vista do Sul", "Bom Fim", "Bom Jesus", "Camaquã", "Campo Novo", "Cascata", "Cavalhada", "Centro", "Centro Histórico", "Chácara das Pedras", "Chapéu do Sol", "Cidade Baixa", "Coronel Aparício Borges", "Costa e Silva", "Cristal", "Cristo Redentor", "Espírito Santo", "Extrema", "Farrapos", "Farroupilha", "Floresta", "Glória", "Guarujá", "Higienópolis", "Hípica", "Humaitá", "Independência", "Ipanema", "Jardim Botânico", "Jardim Carvalho", "Jardim do Salso", "Jardim Europa", "Jardim Floresta", "Jardim Isabel", "Jardim Itu", "Jardim Leopoldina", "Jardim Lindóia", "Jardim Sabará", "Jardim São Pedro", "Lageado", "Lami", "Lomba do Pinheiro", "Mário Quintana", "Medianeira", "Menino Deus", "Moinhos", "Moinhos de Vento", "Mont Serrat", "Morro Santana", "Navegantes", "Nonoai", "Parque Santa Fé", "Partenon", "Passo da Areia", "Passo das Pedras", "Pedra Redonda", "Petrópolis", "Pitinga", "Ponta Grossa", "Praia de Belas", "Restinga", "Rio Branco", "Rubem Berta", "Santa Cecília", "Santa Maria Goretti", "Santa Rosa de Lima", "Santa Tereza", "Santana", "Santo Antônio", "São Caetano", "São Geraldo", "São João", "São José", "São Sebastião", "Sarandi", "Serraria", "Sétimo Céu", "Teresópolis", "Três Figueiras", "Tristeza", "Vila Assunção", "Vila Conceição", "Vila Ipiranga", "Vila Jardim", "Vila João Pessoa", "Vila Nova", "Vila São José",
+];
+const demoDeliveryZones: DeliveryZone[] = [
+  { id: "zon_dog_1", company_id: "cmp_dogexpress", neighborhood: "Centro", fee: 7.9, estimated_minutes: "35-45", active: true },
+  { id: "zon_dog_2", company_id: "cmp_dogexpress", neighborhood: "Moinhos", fee: 9.9, estimated_minutes: "45-55", active: true },
+  { id: "zon_piz_1", company_id: "cmp_pizzariajoao", neighborhood: "Centro", fee: 8.9, estimated_minutes: "40-50", active: true },
+  { id: "zon_piz_2", company_id: "cmp_pizzariajoao", neighborhood: "Bom Fim", fee: 10.9, estimated_minutes: "50-60", active: true },
+  { id: "zon_bur_1", company_id: "cmp_burguerpaulo", neighborhood: "Moinhos", fee: 6.9, estimated_minutes: "30-40", active: true },
+];
+
+function normalizedNeighborhood(value: string) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+
+function zonesForCompany(company_id: ID) {
+  const existing = demoDeliveryZones.filter((zone) => zone.company_id === company_id);
+  const existingNames = new Set(existing.map((zone) => normalizedNeighborhood(zone.neighborhood)));
+  return [
+    ...existing,
+    ...portoAlegreNeighborhoods
+      .filter((neighborhood) => !existingNames.has(normalizedNeighborhood(neighborhood)))
+      .map((neighborhood, index) => ({ id: `zon_${company_id}_${index}`, company_id, neighborhood, fee: 0, estimated_minutes: "A combinar", active: true })),
+  ];
+}
 
 export const initialMockDatabase: MockDatabaseState = {
   plans: [
@@ -353,23 +381,17 @@ export const initialMockDatabase: MockDatabaseState = {
     { id: "cus_piz_1", company_id: "cmp_pizzariajoao", name: "Clara Nunes", phone: "(51) 98888-3030", address: "Bom Fim", total_spent: 73.8, last_order_at: now, created_at: now },
     { id: "cus_bur_1", company_id: "cmp_burguerpaulo", name: "Lucas Vieira", phone: "(51) 97777-4040", address: "Auxiliadora", total_spent: 61.8, last_order_at: monthStart, created_at: monthStart },
   ],
-  delivery_zones: [
-    { id: "zon_dog_1", company_id: "cmp_dogexpress", neighborhood: "Centro", fee: 7.9, estimated_minutes: "35-45", active: true },
-    { id: "zon_dog_2", company_id: "cmp_dogexpress", neighborhood: "Moinhos", fee: 9.9, estimated_minutes: "45-55", active: true },
-    { id: "zon_piz_1", company_id: "cmp_pizzariajoao", neighborhood: "Centro", fee: 8.9, estimated_minutes: "40-50", active: true },
-    { id: "zon_piz_2", company_id: "cmp_pizzariajoao", neighborhood: "Bom Fim", fee: 10.9, estimated_minutes: "50-60", active: true },
-    { id: "zon_bur_1", company_id: "cmp_burguerpaulo", neighborhood: "Moinhos", fee: 6.9, estimated_minutes: "30-40", active: true },
-  ],
+  delivery_zones: [...zonesForCompany("cmp_dogexpress"), ...zonesForCompany("cmp_pizzariajoao"), ...zonesForCompany("cmp_burguerpaulo")],
   coupons: [
     { id: "cup_dog_1", company_id: "cmp_dogexpress", code: "DOG10", type: "percentual", value: 10, minimum_order: 25, usage_limit: 100, used_count: 3, expires_at: "2026-12-31", active: true },
     { id: "cup_piz_1", company_id: "cmp_pizzariajoao", code: "PIZZA15", type: "percentual", value: 15, minimum_order: 45, usage_limit: 80, used_count: 5, expires_at: "2026-12-31", active: true },
     { id: "cup_bur_1", company_id: "cmp_burguerpaulo", code: "PAULO5", type: "fixo", value: 5, minimum_order: 30, usage_limit: 50, used_count: 1, expires_at: "2026-12-31", active: true },
   ],
   orders: [
-    { id: "ord_dog_1", company_id: "cmp_dogexpress", customer_id: "cus_dog_1", status: "preparando", fulfillment: "delivery", delivery_zone_id: "zon_dog_1", subtotal: 54.8, discount: 0, delivery_fee: 7.9, total: 62.7, payment_method: "Pix", created_at: now },
-    { id: "ord_dog_2", company_id: "cmp_dogexpress", customer_id: "cus_dog_2", status: "saiu_para_entrega", fulfillment: "delivery", delivery_zone_id: "zon_dog_2", subtotal: 151.7, discount: 10, delivery_fee: 9.9, total: 151.6, payment_method: "Cartão", created_at: yesterday },
-    { id: "ord_piz_1", company_id: "cmp_pizzariajoao", customer_id: "cus_piz_1", status: "novo", fulfillment: "pickup", subtotal: 73.8, discount: 0, delivery_fee: 0, total: 73.8, payment_method: "Pix", created_at: now },
-    { id: "ord_bur_1", company_id: "cmp_burguerpaulo", customer_id: "cus_bur_1", status: "concluido", fulfillment: "delivery", delivery_zone_id: "zon_bur_1", subtotal: 54.9, discount: 0, delivery_fee: 6.9, total: 61.8, payment_method: "Dinheiro", created_at: monthStart },
+    { id: "ord_dog_1", order_number: 10231, company_id: "cmp_dogexpress", customer_id: "cus_dog_1", status: "preparando", fulfillment: "delivery", delivery_zone_id: "zon_dog_1", subtotal: 54.8, discount: 0, delivery_fee: 7.9, total: 62.7, payment_method: "Pix", created_at: now },
+    { id: "ord_dog_2", order_number: 10232, company_id: "cmp_dogexpress", customer_id: "cus_dog_2", status: "saiu_para_entrega", fulfillment: "delivery", delivery_zone_id: "zon_dog_2", subtotal: 151.7, discount: 10, delivery_fee: 9.9, total: 151.6, payment_method: "Cartão", created_at: yesterday },
+    { id: "ord_piz_1", order_number: 48392, company_id: "cmp_pizzariajoao", customer_id: "cus_piz_1", status: "novo", fulfillment: "pickup", subtotal: 73.8, discount: 0, delivery_fee: 0, total: 73.8, payment_method: "Pix", created_at: now },
+    { id: "ord_bur_1", order_number: 39218, company_id: "cmp_burguerpaulo", customer_id: "cus_bur_1", status: "concluido", fulfillment: "delivery", delivery_zone_id: "zon_bur_1", subtotal: 54.9, discount: 0, delivery_fee: 6.9, total: 61.8, payment_method: "Dinheiro", cash_change_for: 100, calculated_change: 38.2, created_at: monthStart },
   ],
   order_items: [
     { id: "oit_1", company_id: "cmp_dogexpress", order_id: "ord_dog_1", product_id: "prd_dog_1", name: "Dog Startt Clássico", quantity: 2, unit_price: 22.9, total: 45.8 },
