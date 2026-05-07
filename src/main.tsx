@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   BarChart3,
@@ -40,7 +40,6 @@ import {
   Customer,
   DeliveryZone,
   Fulfillment,
-  initialMockDatabase,
   MockDatabaseState,
   Order,
   OrderStatus,
@@ -52,10 +51,29 @@ import {
   User,
   UserRole,
 } from "./data/mockDatabase";
+import {
+  DATABASE_STORAGE_KEY,
+  getInitialDatabaseSnapshot,
+  loadDatabaseSnapshot,
+  persistDatabaseSnapshot,
+} from "./services/database";
 import "./index.css";
 
 type DatabaseApi = ReturnType<typeof createDatabaseApi>;
 type CartItem = Product & { qty: number };
+type CheckoutState = {
+  name: string;
+  phone: string;
+  cep: string;
+  address: string;
+  number: string;
+  complement: string;
+  neighborhood: string;
+  city: string;
+  state: string;
+  payment_method: PaymentMethod;
+  coupon: string;
+};
 type AdminScreen =
   | "dashboard"
   | "caixa"
@@ -72,9 +90,10 @@ type AdminScreen =
 type MasterScreen = "dashboard" | "empresas" | "usuarios" | "planos" | "configuracoes";
 type ToastType = "success" | "error" | "info";
 
-const DB_KEY = "startt_delivery_saas_database_v2";
 const MASTER_SESSION_KEY = "startt_delivery_master_session";
 const ADMIN_SESSION_PREFIX = "startt_delivery_admin_session_";
+const NEW_ORDER_EVENT = "startt:new-order";
+const SAVE_DELAY = 250;
 
 const adminNav: Array<{ id: AdminScreen; label: string; icon: React.ReactNode }> = [
   { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={18} /> },
@@ -97,33 +116,6 @@ const roleAccess: Record<UserRole, AdminScreen[]> = {
   caixa: ["dashboard", "caixa", "pedidos"],
   atendente: ["dashboard", "pedidos", "clientes"],
 };
-
-function readDb(): MockDatabaseState {
-  try {
-    const stored = localStorage.getItem(DB_KEY);
-    if (!stored) return initialMockDatabase;
-    const parsed = JSON.parse(stored) as Partial<MockDatabaseState>;
-    const plans = parsed.plans?.length ? parsed.plans : initialMockDatabase.plans;
-    const companies = (parsed.companies || initialMockDatabase.companies).map((company) => {
-      const legacyStarter = company.plan === "Starter" || company.plan === "Start" || company.status === "trial";
-      const fallbackPlan = legacyStarter ? plans.find((plan) => plan.id === "plan_start") : plans.find((plan) => plan.name === company.plan) || plans.find((plan) => plan.id === "plan_pro") || plans[0];
-      return {
-        ...company,
-        is_registration_enabled: company.is_registration_enabled ?? true,
-        plan_id: legacyStarter ? "plan_start" : company.plan_id || fallbackPlan?.id || "plan_pro",
-        subscription_status: company.subscription_status || (company.status === "trial" ? "trialing" : "active"),
-        monthly_price: company.monthly_price ?? fallbackPlan?.monthly_price ?? 79.9,
-        due_day: company.due_day ?? 10,
-        next_due_date: company.next_due_date || "2026-05-10",
-        last_payment_date: company.last_payment_date || "",
-        payment_notes: company.payment_notes || "",
-      };
-    });
-    return { ...initialMockDatabase, ...parsed, plans, companies };
-  } catch {
-    return initialMockDatabase;
-  }
-}
 
 function money(value: number) {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -148,6 +140,20 @@ function isValidSlug(slug: string) {
 function positiveNumber(value: string | number) {
   const number = Number(value);
   return Number.isFinite(number) && number > 0;
+}
+
+function runSave(setSaving: (value: boolean) => void, action: () => void, success: string) {
+  setSaving(true);
+  window.setTimeout(() => {
+    try {
+      action();
+      notify("success", success);
+    } catch {
+      notify("error", "Não foi possível salvar agora. Confira os dados e tente novamente.");
+    } finally {
+      setSaving(false);
+    }
+  }, SAVE_DELAY);
 }
 
 function cartKey(companyId: string) {
@@ -183,14 +189,42 @@ function openPrintable(title: string, html: string) {
 }
 
 function App() {
-  const [dbState, setDbState] = useState<MockDatabaseState>(() => readDb());
+  const [dbState, setDbState] = useState<MockDatabaseState>(() => getInitialDatabaseSnapshot());
+  const [databaseReady, setDatabaseReady] = useState(false);
   const db = useMemo(() => createDatabaseApi(dbState), [dbState]);
   const parts = window.location.pathname.split("/").filter(Boolean);
   const withToast = (node: React.ReactNode) => <><ToastHost />{node}</>;
 
   useEffect(() => {
-    localStorage.setItem(DB_KEY, JSON.stringify(dbState));
-  }, [dbState]);
+    let alive = true;
+    loadDatabaseSnapshot()
+      .then((snapshot) => {
+        if (!alive) return;
+        setDbState(snapshot);
+      })
+      .finally(() => {
+        if (alive) setDatabaseReady(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!databaseReady) return;
+    void persistDatabaseSnapshot(dbState);
+  }, [dbState, databaseReady]);
+
+  useEffect(() => {
+    function refreshFromStorage(event?: StorageEvent) {
+      if (event && event.key !== DATABASE_STORAGE_KEY) return;
+      loadDatabaseSnapshot().then(setDbState);
+    }
+    window.addEventListener("storage", refreshFromStorage);
+    return () => {
+      window.removeEventListener("storage", refreshFromStorage);
+    };
+  }, []);
 
   if (parts[0] === "master") {
     return withToast(<MasterApp db={db} setDbState={setDbState} screen={(parts[1] as MasterScreen) || "dashboard"} login={parts[1] === "login"} />);
@@ -234,9 +268,9 @@ function AppHeader({ company }: { company?: Company }) {
     <header className="sticky top-0 z-30 border-b border-black/10 bg-startt-paper/90 px-4 py-3 backdrop-blur-xl">
       <div className="mx-auto flex w-[min(1280px,100%)] items-center justify-between gap-4">
         <a href="/" className="flex items-center gap-3">
-          <span className="grid h-11 w-11 place-items-center rounded-lg bg-startt-green text-2xl font-black text-white">S</span>
+          {company?.logo_url ? <img className="h-11 w-11 rounded-lg object-cover" src={company.logo_url} alt={company.name} onError={(event) => { event.currentTarget.style.display = "none"; }} /> : <span className="grid h-11 w-11 place-items-center rounded-lg bg-startt-green text-2xl font-black text-white">S</span>}
           <span>
-            <strong className="block leading-tight">Startt Delivery</strong>
+            <strong className="block leading-tight">{company?.name || "Startt Delivery"}</strong>
             <small className="block text-startt-muted">produzido por Startt Facilities</small>
           </span>
         </a>
@@ -287,9 +321,10 @@ function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: Dat
   const [categoryId, setCategoryId] = useState("all");
   const [cart, setCart] = useState<CartItem[]>(() => readCart(company.id));
   const [cartOpen, setCartOpen] = useState(checkoutOnly);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [fulfillment, setFulfillment] = useState<Fulfillment>(company.delivery_enabled ? "delivery" : "pickup");
   const [zoneId, setZoneId] = useState(activeZones[0]?.id || "");
-  const [checkout, setCheckout] = useState({ name: "", phone: "", address: "", payment_method: "Pix" as PaymentMethod, coupon: "" });
+  const [checkout, setCheckout] = useState({ name: "", phone: "", cep: "", address: "", number: "", complement: "", neighborhood: "", city: "", state: "", payment_method: "Pix" as PaymentMethod, coupon: "" });
 
   useEffect(() => localStorage.setItem(cartKey(company.id), JSON.stringify(cart)), [cart, company.id]);
 
@@ -347,6 +382,7 @@ function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: Dat
         ...current.order_items,
       ],
     }));
+    window.dispatchEvent(new CustomEvent(NEW_ORDER_EVENT, { detail: { company_id: company.id, order_id: orderId } }));
     const message = [
       `Olá, ${company.name}! Quero fazer um pedido:`,
       "",
@@ -370,7 +406,7 @@ function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: Dat
     notify("success", "Pedido criado e mensagem do WhatsApp preparada.");
   }
 
-  if (company.status === "blocked" || company.status === "canceled") {
+  if (["blocked", "canceled", "disabled"].includes(company.status)) {
     return <Suspended company={company} publicView />;
   }
 
@@ -379,7 +415,7 @@ function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: Dat
       <AppHeader company={company} />
       {!checkoutOnly && (
         <section className="relative isolate flex min-h-[520px] items-end overflow-hidden px-4 py-10 md:px-10">
-          <img className="absolute inset-0 -z-20 h-full w-full object-cover" src={company.hero_image} alt={company.name} />
+          <img className="absolute inset-0 -z-20 h-full w-full object-cover" src={company.banner_url || company.hero_image} alt={company.name} onError={(event) => { event.currentTarget.src = company.hero_image || "https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?auto=format&fit=crop&w=1400&q=80"; }} />
           <div className="absolute inset-0 -z-10 bg-gradient-to-r from-black/85 via-black/45 to-black/10" />
           <div className="mx-auto w-[min(1280px,100%)] pb-4 text-white">
             <span className="inline-flex items-center gap-2 text-sm font-black uppercase text-startt-yellow"><Sparkles size={16} /> Cardápio público</span>
@@ -415,21 +451,48 @@ function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: Dat
           </div>
           {!checkoutOnly && (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {filtered.map((product) => <ProductCard key={product.id} product={product} category={categories.find((item) => item.id === product.category_id)?.name || ""} onAdd={() => add(product)} />)}
+              {filtered.map((product) => <ProductCard key={product.id} product={product} category={categories.find((item) => item.id === product.category_id)?.name || ""} onOpen={() => setSelectedProduct(product)} onAdd={() => add(product)} />)}
               {!filtered.length && <div className="rounded-lg border border-black/10 bg-white p-6 text-startt-muted md:col-span-2 xl:col-span-3">Nenhum produto encontrado neste cardápio.</div>}
             </div>
           )}
         </section>
       </section>
       <CartDrawer cartOpen={cartOpen} setCartOpen={setCartOpen} cart={cart} setCart={setCart} company={company} zones={activeZones} zoneId={zoneId} setZoneId={setZoneId} checkout={checkout} setCheckout={setCheckout} fulfillment={fulfillment} setFulfillment={setFulfillment} subtotal={subtotal} discount={discount} deliveryFee={deliveryFee} total={total} finishOrder={finishOrder} />
+      {selectedProduct && <ProductModal product={selectedProduct} category={categories.find((item) => item.id === selectedProduct.category_id)?.name || ""} onClose={() => setSelectedProduct(null)} onAdd={() => { add(selectedProduct); setSelectedProduct(null); }} />}
       <Footer />
     </main>
   );
 }
 
-function CartDrawer({ cartOpen, setCartOpen, cart, setCart, company, zones, zoneId, setZoneId, checkout, setCheckout, fulfillment, setFulfillment, subtotal, discount, deliveryFee, total, finishOrder }: { cartOpen: boolean; setCartOpen: (value: boolean) => void; cart: CartItem[]; setCart: React.Dispatch<React.SetStateAction<CartItem[]>>; company: Company; zones: DeliveryZone[]; zoneId: string; setZoneId: (value: string) => void; checkout: { name: string; phone: string; address: string; payment_method: PaymentMethod; coupon: string }; setCheckout: (value: { name: string; phone: string; address: string; payment_method: PaymentMethod; coupon: string }) => void; fulfillment: Fulfillment; setFulfillment: (value: Fulfillment) => void; subtotal: number; discount: number; deliveryFee: number; total: number; finishOrder: () => void }) {
+function CartDrawer({ cartOpen, setCartOpen, cart, setCart, company, zones, zoneId, setZoneId, checkout, setCheckout, fulfillment, setFulfillment, subtotal, discount, deliveryFee, total, finishOrder }: { cartOpen: boolean; setCartOpen: (value: boolean) => void; cart: CartItem[]; setCart: React.Dispatch<React.SetStateAction<CartItem[]>>; company: Company; zones: DeliveryZone[]; zoneId: string; setZoneId: (value: string) => void; checkout: CheckoutState; setCheckout: (value: CheckoutState) => void; fulfillment: Fulfillment; setFulfillment: (value: Fulfillment) => void; subtotal: number; discount: number; deliveryFee: number; total: number; finishOrder: () => void }) {
+  const [cepLoading, setCepLoading] = useState(false);
+  const [cepMessage, setCepMessage] = useState("");
   function qty(productId: string, delta: number) {
     setCart((current) => current.map((item) => item.id === productId ? { ...item, qty: item.qty + delta } : item).filter((item) => item.qty > 0));
+  }
+  async function lookupCep(value: string) {
+    const cep = value.replace(/\D/g, "");
+    setCheckout({ ...checkout, cep: value });
+    setCepMessage("");
+    if (cep.length !== 8) return;
+    setCepLoading(true);
+    try {
+      const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+      const data = await response.json();
+      if (data.erro) {
+        setCepMessage("CEP não encontrado. Você pode preencher o endereço manualmente.");
+        return;
+      }
+      const next = { ...checkout, cep: value, address: data.logradouro || checkout.address, neighborhood: data.bairro || checkout.neighborhood, city: data.localidade || checkout.city, state: data.uf || checkout.state };
+      setCheckout(next);
+      const matchedZone = zones.find((zone) => zone.neighborhood.toLowerCase() === String(data.bairro || "").toLowerCase());
+      if (matchedZone) setZoneId(matchedZone.id);
+      setCepMessage("Endereço preenchido pelo CEP. Confira o número e complemento.");
+    } catch {
+      setCepMessage("Não foi possível buscar o CEP agora. Preencha manualmente.");
+    } finally {
+      setCepLoading(false);
+    }
   }
   return (
     <div className={`fixed inset-0 z-50 ${cartOpen ? "pointer-events-auto" : "pointer-events-none"}`}>
@@ -460,7 +523,24 @@ function CartDrawer({ cartOpen, setCartOpen, cart, setCart, company, zones, zone
           </div>
           <Input placeholder="Nome" value={checkout.name} onChange={(value) => setCheckout({ ...checkout, name: value })} />
           <Input placeholder="Telefone" value={checkout.phone} onChange={(value) => setCheckout({ ...checkout, phone: value })} />
-          {fulfillment === "delivery" && <><Input placeholder="Endereço completo" value={checkout.address} onChange={(value) => setCheckout({ ...checkout, address: value })} /><Select value={zoneId} onChange={setZoneId}>{zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.neighborhood} - {money(zone.fee)} - {zone.estimated_minutes} min</option>)}</Select></>}
+          {fulfillment === "delivery" && <>
+            <div className="grid gap-2">
+              <Input placeholder="CEP" value={checkout.cep} onChange={lookupCep} />
+              {cepLoading && <span className="text-xs font-bold text-startt-green">Buscando CEP...</span>}
+              {cepMessage && <span className="text-xs font-bold text-startt-muted">{cepMessage}</span>}
+            </div>
+            <Input placeholder="Rua" value={checkout.address} onChange={(value) => setCheckout({ ...checkout, address: value })} />
+            <div className="grid grid-cols-2 gap-2">
+              <Input placeholder="Número" value={checkout.number} onChange={(value) => setCheckout({ ...checkout, number: value })} />
+              <Input placeholder="Complemento" value={checkout.complement} onChange={(value) => setCheckout({ ...checkout, complement: value })} />
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <Input placeholder="Bairro" value={checkout.neighborhood} onChange={(value) => setCheckout({ ...checkout, neighborhood: value })} />
+              <Input placeholder="Cidade" value={checkout.city} onChange={(value) => setCheckout({ ...checkout, city: value })} />
+              <Input placeholder="UF" value={checkout.state} onChange={(value) => setCheckout({ ...checkout, state: value.toUpperCase() })} />
+            </div>
+            <Select value={zoneId} onChange={setZoneId}>{zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.neighborhood} - {money(zone.fee)} - {zone.estimated_minutes} min</option>)}</Select>
+          </>}
           <div className="grid grid-cols-2 gap-2">
             <Select value={checkout.payment_method} onChange={(value) => setCheckout({ ...checkout, payment_method: value as PaymentMethod })}><option>Pix</option><option>Cartão</option><option>Dinheiro</option></Select>
             <Input placeholder="Cupom" value={checkout.coupon} onChange={(value) => setCheckout({ ...checkout, coupon: value })} />
@@ -479,11 +559,51 @@ function CompanyAdmin({ db, setDbState, company, screen, login }: { db: Database
   const [sessionUserId, setSessionUserId] = useState(() => localStorage.getItem(sessionKey));
   const [credentials, setCredentials] = useState({ email: "", password: "" });
   const [loginError, setLoginError] = useState("");
+  const [newOrderBadge, setNewOrderBadge] = useState(0);
+  const [newOrderFlash, setNewOrderFlash] = useState(false);
+  const lastOrderCount = useRef(bundle.orders.length);
   const user = bundle.users.find((item) => item.id === sessionUserId);
   const allowed = user ? roleAccess[user.role] : [];
   const activeScreen = allowed.includes(screen) ? screen : allowed[0] || "dashboard";
 
-  if (company.status === "blocked" || company.status === "canceled" || company.subscription_status === "overdue" || company.subscription_status === "canceled") return <Suspended company={company} />;
+  function announceNewOrder() {
+    setNewOrderBadge((count) => count + 1);
+    setNewOrderFlash(true);
+    notify("info", "Novo pedido recebido.");
+    try {
+      const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (AudioContextClass) {
+        const audio = new AudioContextClass();
+        const oscillator = audio.createOscillator();
+        const gain = audio.createGain();
+        oscillator.frequency.value = 880;
+        gain.gain.value = 0.08;
+        oscillator.connect(gain);
+        gain.connect(audio.destination);
+        oscillator.start();
+        oscillator.stop(audio.currentTime + 0.18);
+      }
+    } catch {
+      // Navegadores podem bloquear áudio sem interação prévia.
+    }
+    window.setTimeout(() => setNewOrderFlash(false), 4500);
+  }
+
+  useEffect(() => {
+    if (bundle.orders.length > lastOrderCount.current) announceNewOrder();
+    lastOrderCount.current = bundle.orders.length;
+  }, [bundle.orders.length]);
+
+  useEffect(() => {
+    function onNewOrder(event: Event) {
+      const detail = (event as CustomEvent<{ company_id: string }>).detail;
+      if (detail?.company_id === company.id) announceNewOrder();
+    }
+    window.addEventListener(NEW_ORDER_EVENT, onNewOrder);
+    return () => window.removeEventListener(NEW_ORDER_EVENT, onNewOrder);
+  }, [company.id]);
+
+  if (["blocked", "canceled", "disabled"].includes(company.status) || company.subscription_status === "overdue" || company.subscription_status === "canceled") return <Suspended company={company} />;
   if (!company.is_registration_enabled && !user) return <Suspended company={company} message="Cadastro/acesso temporariamente desativado" />;
 
   function doLogin(event: React.FormEvent) {
@@ -528,7 +648,10 @@ function CompanyAdmin({ db, setDbState, company, screen, login }: { db: Database
       <header className="sticky top-0 z-30 border-b border-black/10 bg-startt-paper/95 px-4 py-3 backdrop-blur-xl">
         <div className="mx-auto flex w-[min(1280px,100%)] flex-wrap items-center justify-between gap-3">
           <LogoTitle title="Startt Delivery" subtitle={`${company.name} • ${user.name} (${user.role})`} />
-          <a className="rounded-lg border border-black/10 bg-white px-4 py-3 font-extrabold" href={`/${company.slug}`}>Ver cardápio</a>
+          <div className="flex flex-wrap items-center gap-2">
+            {newOrderBadge > 0 && <a href={`/${company.slug}/admin/pedidos`} onClick={() => setNewOrderBadge(0)} className={`rounded-lg px-4 py-3 font-black text-white ${newOrderFlash ? "bg-startt-red shadow-xl" : "bg-startt-green"}`}>{newOrderBadge} novo(s) pedido(s)</a>}
+            <a className="rounded-lg border border-black/10 bg-white px-4 py-3 font-extrabold" href={`/${company.slug}`}>Ver cardápio</a>
+          </div>
         </div>
       </header>
       <section className="mx-auto grid w-[min(1280px,calc(100%-32px))] gap-6 py-6 lg:grid-cols-[260px_1fr]">
@@ -675,10 +798,12 @@ function sendOrderUpdate(order: Order, customer: string, company: Company) {
 }
 
 function ProductsManager({ company, products, categories, plan, setDbState }: { company: Company; products: Product[]; categories: Category[]; plan?: Plan; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
-  const blank = { id: "", name: "", description: "", price: "", category_id: categories[0]?.id || "", image: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=900&q=80", preparation_time: "10", badge: "", featured: false, active: true };
+  const blank = { id: "", name: "", description: "", ingredients: "", price: "", category_id: categories[0]?.id || "", image: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=900&q=80", preparation_time: "10", badge: "", featured: false, active: true };
   const [form, setForm] = useState(blank);
+  const [saving, setSaving] = useState(false);
   function save(event: React.FormEvent) {
     event.preventDefault();
+    if (saving) return;
     if (!form.name.trim() || !positiveNumber(form.price)) {
       notify("error", "Informe nome e preço válido para salvar o produto.");
       return;
@@ -691,12 +816,14 @@ function ProductsManager({ company, products, categories, plan, setDbState }: { 
       notify("error", "Limite de produtos do plano atingido. Entre em contato com a Startt Facilities.");
       return;
     }
-    const product: Product = { id: form.id || id("prd"), company_id: company.id, category_id: form.category_id, name: form.name, description: form.description, price: Number(form.price), image: form.image, preparation_time: Number(form.preparation_time), featured: form.featured, active: form.active, badge: form.badge || undefined };
-    setDbState((current) => ({ ...current, products: form.id ? current.products.map((item) => item.id === form.id && item.company_id === company.id ? product : item) : [product, ...current.products] }));
-    setForm(blank);
-    notify("success", form.id ? "Produto atualizado com sucesso." : "Produto criado com sucesso.");
+    const product: Product = { id: form.id || id("prd"), company_id: company.id, category_id: form.category_id, name: form.name, description: form.description, ingredients: form.ingredients, price: Number(form.price), image: form.image, preparation_time: Number(form.preparation_time), featured: form.featured, active: form.active, badge: form.badge || undefined };
+    const editing = Boolean(form.id);
+    runSave(setSaving, () => {
+      setDbState((current) => ({ ...current, products: form.id ? current.products.map((item) => item.id === form.id && item.company_id === company.id ? product : item) : [product, ...current.products] }));
+      setForm(blank);
+    }, editing ? "Produto atualizado com sucesso." : "Produto criado com sucesso.");
   }
-  function edit(product: Product) { setForm({ id: product.id, name: product.name, description: product.description, price: String(product.price), category_id: product.category_id, image: product.image, preparation_time: String(product.preparation_time), badge: product.badge || "", featured: product.featured, active: product.active }); }
+  function edit(product: Product) { setForm({ id: product.id, name: product.name, description: product.description, ingredients: product.ingredients || "", price: String(product.price), category_id: product.category_id, image: product.image, preparation_time: String(product.preparation_time), badge: product.badge || "", featured: product.featured, active: product.active }); }
   function remove(product: Product) { if (confirm(`Excluir ${product.name}?`)) { setDbState((current) => ({ ...current, products: current.products.filter((item) => !(item.id === product.id && item.company_id === company.id)) })); notify("success", "Produto excluído com sucesso."); } }
   return (
     <CrudShell title="Produtos" description="Cadastrar, editar, excluir e ativar/desativar produtos.">
@@ -705,8 +832,9 @@ function ProductsManager({ company, products, categories, plan, setDbState }: { 
         <Input placeholder="Imagem por URL" value={form.image} onChange={(value) => setForm({ ...form, image: value })} />
         <div className="grid gap-3 md:grid-cols-3"><Input placeholder="Tempo de preparo" value={form.preparation_time} onChange={(value) => setForm({ ...form, preparation_time: value })} /><Input placeholder="Destaque/selo" value={form.badge} onChange={(value) => setForm({ ...form, badge: value })} /><label className="flex items-center gap-2 font-bold"><input type="checkbox" checked={form.featured} onChange={(event) => setForm({ ...form, featured: event.target.checked })} /> Destaque</label></div>
         <textarea className="min-h-24 rounded-lg border border-black/10 px-3 py-3 outline-startt-green" placeholder="Descrição" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
+        <textarea className="min-h-20 rounded-lg border border-black/10 px-3 py-3 outline-startt-green" placeholder="Ingredientes" value={form.ingredients} onChange={(event) => setForm({ ...form, ingredients: event.target.value })} />
         <label className="flex items-center gap-2 font-bold"><input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} /> Ativo</label>
-        <button className="w-fit rounded-lg bg-startt-green px-4 py-3 font-black text-white">{form.id ? "Salvar alterações" : "Criar produto"}</button>
+        <button disabled={saving} className="w-fit rounded-lg bg-startt-green px-4 py-3 font-black text-white disabled:opacity-60">{saving ? "Salvando..." : form.id ? "Salvar alterações" : "Criar produto"}</button>
       </form>
       <Table headers={["Produto", "Categoria", "Preço", "Status", "Ações"]} rows={products.map((product) => [product.name, categoryName(product.category_id, categories), money(product.price), product.active ? "Ativo" : "Inativo", <Actions key={product.id} onEdit={() => edit(product)} onDelete={() => remove(product)} />])} />
     </CrudShell>
@@ -715,9 +843,10 @@ function ProductsManager({ company, products, categories, plan, setDbState }: { 
 
 function CategoriesManager({ company, categories, setDbState }: { company: Company; categories: Category[]; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
   const [name, setName] = useState("");
-  function add() { if (name) { setDbState((current) => ({ ...current, categories: [{ id: id("cat"), company_id: company.id, name, sort_order: categories.length + 1, active: true }, ...current.categories] })); setName(""); } }
-  function toggle(category: Category) { setDbState((current) => ({ ...current, categories: current.categories.map((item) => item.id === category.id && item.company_id === company.id ? { ...item, active: !item.active } : item) })); }
-  function remove(category: Category) { if (confirm(`Excluir ${category.name}?`)) setDbState((current) => ({ ...current, categories: current.categories.filter((item) => !(item.id === category.id && item.company_id === company.id)) })); }
+  const [saving, setSaving] = useState(false);
+  function add() { if (!name.trim()) { notify("error", "Informe o nome da categoria."); return; } if (saving) return; runSave(setSaving, () => { setDbState((current) => ({ ...current, categories: [{ id: id("cat"), company_id: company.id, name, sort_order: categories.length + 1, active: true }, ...current.categories] })); setName(""); }, "Categoria salva com sucesso."); }
+  function toggle(category: Category) { runSave(setSaving, () => setDbState((current) => ({ ...current, categories: current.categories.map((item) => item.id === category.id && item.company_id === company.id ? { ...item, active: !item.active } : item) })), "Categoria atualizada."); }
+  function remove(category: Category) { if (confirm(`Excluir ${category.name}?`)) { setDbState((current) => ({ ...current, categories: current.categories.filter((item) => !(item.id === category.id && item.company_id === company.id)) })); notify("success", "Categoria excluída com sucesso."); } }
   return <CrudShell title="Categorias" description="Cadastrar, editar ordem e ativar/desativar categorias."><InlineAdd value={name} setValue={setName} onAdd={add} placeholder="Nova categoria" /><Table headers={["Nome", "Ordem", "Status", "Ações"]} rows={categories.map((category) => [<Input key={category.id} value={category.name} placeholder="Categoria" onChange={(value) => setDbState((current) => ({ ...current, categories: current.categories.map((item) => item.id === category.id ? { ...item, name: value } : item) }))} />, String(category.sort_order), category.active ? "Ativa" : "Inativa", <div key={category.id} className="flex gap-2"><button className="rounded-lg border px-3 py-2 font-bold" onClick={() => toggle(category)}>Ativar/desativar</button><button className="rounded-lg bg-startt-red px-3 py-2 font-bold text-white" onClick={() => remove(category)}>Excluir</button></div>])} /></CrudShell>;
 }
 
@@ -764,16 +893,18 @@ function PrintManager({ company, settings, setDbState }: { company: Company; set
 
 function CompanySettings({ company, setDbState }: { company: Company; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
   const [form, setForm] = useState(company);
-  function save() { setDbState((current) => ({ ...current, companies: current.companies.map((item) => item.id === company.id ? form : item) })); }
-  return <CrudShell title="Configurações" description="Essas configs alteram o cardápio público da empresa."><div className="grid gap-3 rounded-lg border border-black/10 bg-white p-4 md:grid-cols-2"><Input placeholder="Nome da empresa" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><Input placeholder="Logo URL" value={form.logo_url} onChange={(value) => setForm({ ...form, logo_url: value })} /><Input placeholder="WhatsApp" value={form.whatsapp} onChange={(value) => setForm({ ...form, whatsapp: value })} /><Input placeholder="Endereço" value={form.address} onChange={(value) => setForm({ ...form, address: value })} /><Input placeholder="Pedido mínimo" value={String(form.minimum_order)} onChange={(value) => setForm({ ...form, minimum_order: Number(value) || 0 })} /><Input placeholder="Tempo estimado" value={form.estimated_delivery_time} onChange={(value) => setForm({ ...form, estimated_delivery_time: value })} /><Input placeholder="Cor principal" value={form.primary_color} onChange={(value) => setForm({ ...form, primary_color: value })} /><Input placeholder="Horário de funcionamento" value={form.opening_hours} onChange={(value) => setForm({ ...form, opening_hours: value })} /><label className="flex gap-2 font-bold"><input type="checkbox" checked={form.is_open} onChange={(e) => setForm({ ...form, is_open: e.target.checked })} /> Aberto</label><label className="flex gap-2 font-bold"><input type="checkbox" checked={form.delivery_enabled} onChange={(e) => setForm({ ...form, delivery_enabled: e.target.checked })} /> Permitir entrega</label><label className="flex gap-2 font-bold"><input type="checkbox" checked={form.pickup_enabled} onChange={(e) => setForm({ ...form, pickup_enabled: e.target.checked })} /> Permitir retirada</label><Input placeholder="Mensagem de rodapé" value={form.footer_message} onChange={(value) => setForm({ ...form, footer_message: value })} /><button onClick={save} className="w-fit rounded-lg bg-startt-green px-4 py-3 font-black text-white">Salvar configurações</button></div></CrudShell>;
+  const [saving, setSaving] = useState(false);
+  function save() { if (saving) return; runSave(setSaving, () => setDbState((current) => ({ ...current, companies: current.companies.map((item) => item.id === company.id ? { ...form, hero_image: form.banner_url || form.hero_image } : item) })), "Configurações salvas com sucesso."); }
+  return <CrudShell title="Configurações" description="Essas configs alteram o cardápio público da empresa."><div className="grid gap-3 rounded-lg border border-black/10 bg-white p-4 md:grid-cols-2"><Input placeholder="Nome da empresa" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><Input placeholder="Logo URL" value={form.logo_url} onChange={(value) => setForm({ ...form, logo_url: value })} /><Input placeholder="Banner URL" value={form.banner_url || form.hero_image} onChange={(value) => setForm({ ...form, banner_url: value, hero_image: value })} /><Input placeholder="WhatsApp" value={form.whatsapp} onChange={(value) => setForm({ ...form, whatsapp: value })} /><Input placeholder="Endereço" value={form.address} onChange={(value) => setForm({ ...form, address: value })} /><Input placeholder="Pedido mínimo" value={String(form.minimum_order)} onChange={(value) => setForm({ ...form, minimum_order: Number(value) || 0 })} /><Input placeholder="Tempo estimado" value={form.estimated_delivery_time} onChange={(value) => setForm({ ...form, estimated_delivery_time: value })} /><Input placeholder="Cor principal" value={form.primary_color} onChange={(value) => setForm({ ...form, primary_color: value })} /><Input placeholder="Horário de funcionamento" value={form.opening_hours} onChange={(value) => setForm({ ...form, opening_hours: value })} /><label className="flex gap-2 font-bold"><input type="checkbox" checked={form.is_open} onChange={(e) => setForm({ ...form, is_open: e.target.checked })} /> Aberto</label><label className="flex gap-2 font-bold"><input type="checkbox" checked={form.delivery_enabled} onChange={(e) => setForm({ ...form, delivery_enabled: e.target.checked })} /> Permitir entrega</label><label className="flex gap-2 font-bold"><input type="checkbox" checked={form.pickup_enabled} onChange={(e) => setForm({ ...form, pickup_enabled: e.target.checked })} /> Permitir retirada</label><Input placeholder="Mensagem de rodapé" value={form.footer_message} onChange={(value) => setForm({ ...form, footer_message: value })} /><button disabled={saving} onClick={save} className="w-fit rounded-lg bg-startt-green px-4 py-3 font-black text-white disabled:opacity-60">{saving ? "Salvando..." : "Salvar configurações"}</button></div></CrudShell>;
 }
 
 function UsersManager({ company, users, plan, setDbState }: { company: Company; users: User[]; plan?: Plan; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
   const blank = { name: "", email: "", password: "123456", role: "atendente" as UserRole };
   const [form, setForm] = useState(blank);
-  function add() { if (!form.name || !form.email || !form.password) { notify("error", "Informe nome, e-mail e senha do usuário."); return; } if (!company.is_registration_enabled) { notify("error", "Cadastro/acesso temporariamente desativado."); return; } if (plan && users.length >= plan.max_users) { notify("error", "Limite de usuários do plano atingido. Entre em contato com a Startt Facilities."); return; } setDbState((current) => ({ ...current, users: [{ id: id("usr"), company_id: company.id, name: form.name, email: form.email, password: form.password, role: form.role, is_active: true, created_at: new Date().toISOString() }, ...current.users] })); setForm(blank); notify("success", "Usuário criado com sucesso."); }
-  function toggle(user: User) { setDbState((current) => ({ ...current, users: current.users.map((item) => item.id === user.id && item.company_id === company.id ? { ...item, is_active: !item.is_active } : item) })); }
-  function reset(user: User) { const password = prompt("Nova senha", "123456"); if (password) setDbState((current) => ({ ...current, users: current.users.map((item) => item.id === user.id && item.company_id === company.id ? { ...item, password } : item) })); }
+  const [saving, setSaving] = useState(false);
+  function add() { if (saving) return; if (!form.name || !form.email || !form.password) { notify("error", "Informe nome, e-mail e senha do usuário."); return; } if (!company.is_registration_enabled) { notify("error", "Cadastro/acesso temporariamente desativado."); return; } if (plan && users.length >= plan.max_users) { notify("error", "Limite de usuários do plano atingido. Entre em contato com a Startt Facilities."); return; } runSave(setSaving, () => { setDbState((current) => ({ ...current, users: [{ id: id("usr"), company_id: company.id, name: form.name, email: form.email, password: form.password, role: form.role, is_active: true, created_at: new Date().toISOString() }, ...current.users] })); setForm(blank); }, "Usuário criado com sucesso."); }
+  function toggle(user: User) { runSave(setSaving, () => setDbState((current) => ({ ...current, users: current.users.map((item) => item.id === user.id && item.company_id === company.id ? { ...item, is_active: !item.is_active } : item) })), user.is_active ? "Usuário bloqueado com sucesso." : "Usuário desbloqueado com sucesso."); }
+  function reset(user: User) { if (!confirm(`Redefinir senha de ${user.name}?`)) return; const password = prompt("Nova senha", "123456"); if (password) runSave(setSaving, () => setDbState((current) => ({ ...current, users: current.users.map((item) => item.id === user.id && item.company_id === company.id ? { ...item, password } : item) })), "Senha redefinida com sucesso."); }
   return <CrudShell title="Usuários" description="Usuários internos e funções por empresa."><div className="grid gap-3 rounded-lg border border-black/10 bg-white p-4 md:grid-cols-5"><Input placeholder="Nome" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><Input placeholder="E-mail" value={form.email} onChange={(value) => setForm({ ...form, email: value })} /><Input placeholder="Senha" value={form.password} onChange={(value) => setForm({ ...form, password: value })} /><Select value={form.role} onChange={(value) => setForm({ ...form, role: value as UserRole })}>{(["dono", "gerente", "caixa", "atendente"] as UserRole[]).map((role) => <option key={role}>{role}</option>)}</Select><button onClick={add} className="rounded-lg bg-startt-green px-4 font-black text-white">Criar</button></div><Table headers={["Nome", "E-mail", "Função", "Status", "Ações"]} rows={users.map((user) => [user.name, user.email, user.role, user.is_active ? "Ativo" : "Bloqueado", <div key={user.id} className="flex gap-2"><button className="rounded-lg border px-3 py-2 font-bold" onClick={() => reset(user)}>Redefinir senha</button><button className="rounded-lg border px-3 py-2 font-bold" onClick={() => toggle(user)}>Ativar/bloquear</button></div>])} /></CrudShell>;
 }
 
@@ -781,14 +912,14 @@ function MasterApp({ db, setDbState, screen, login }: { db: DatabaseApi; setDbSt
   const [session, setSession] = useState(() => localStorage.getItem(MASTER_SESSION_KEY));
   const [credentials, setCredentials] = useState({ email: "", password: "" });
   const [masterError, setMasterError] = useState("");
-  function doLogin(event: React.FormEvent) { event.preventDefault(); const found = db.master_users.find((user) => user.email === credentials.email && user.password === credentials.password); if (!found) { setMasterError("Login master inválido."); return; } setMasterError(""); localStorage.setItem(MASTER_SESSION_KEY, found.id); setSession(found.id); window.history.pushState({}, "", "/master"); }
+  function doLogin(event: React.FormEvent) { event.preventDefault(); const found = db.master_users.find((user) => user.email === credentials.email && user.password === credentials.password && user.is_active); if (!found) { setMasterError("Login master inválido ou bloqueado."); return; } setMasterError(""); localStorage.setItem(MASTER_SESSION_KEY, found.id); setSession(found.id); window.history.pushState({}, "", "/master"); }
   if (!session) return <main className="grid min-h-screen place-items-center bg-startt-paper p-4"><form onSubmit={doLogin} className="grid w-[min(460px,100%)] gap-4 rounded-lg border border-black/10 bg-white p-6 shadow-xl"><LogoTitle title="Admin Master" subtitle="Startt Delivery SaaS" /><Input placeholder="E-mail" value={credentials.email} onChange={(email) => setCredentials({ ...credentials, email })} /><input className="min-h-11 rounded-lg border border-black/10 px-3 outline-startt-green" placeholder="Senha" type="password" value={credentials.password} onChange={(e) => setCredentials({ ...credentials, password: e.target.value })} />{masterError && <p className="rounded-lg bg-startt-red/10 p-3 text-sm font-bold text-startt-red">{masterError}</p>}<button className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-startt-green px-4 font-black text-white"><ShieldCheck size={18} /> Entrar</button><p className="text-sm text-startt-muted">master@startt.com / 123456</p></form></main>;
   return <main className="min-h-screen bg-startt-paper"><header className="sticky top-0 z-30 border-b border-black/10 bg-startt-paper/95 px-4 py-3"><div className="mx-auto flex w-[min(1280px,100%)] items-center justify-between"><LogoTitle title="Admin Master" subtitle="Controle geral do SaaS" /><button onClick={() => { localStorage.removeItem(MASTER_SESSION_KEY); setSession(null); }} className="rounded-lg border bg-white px-4 py-3 font-black">Sair</button></div></header><section className="mx-auto grid w-[min(1280px,calc(100%-32px))] gap-6 py-6 lg:grid-cols-[260px_1fr]"><aside className="grid gap-2 self-start rounded-lg border border-black/10 bg-white p-3">{(["dashboard", "empresas", "usuarios", "planos", "configuracoes"] as MasterScreen[]).map((item) => <a key={item} href={`/master/${item === "dashboard" ? "" : item}`} className={`rounded-lg px-3 py-3 font-black ${screen === item || (!screen && item === "dashboard") ? "bg-startt-green text-white" : "bg-startt-soft"}`}>{item}</a>)}</aside><MasterContent screen={screen || "dashboard"} db={db} setDbState={setDbState} /></section></main>;
 }
 
 function MasterContent({ screen, db, setDbState }: { screen: MasterScreen; db: DatabaseApi; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
   if (screen === "empresas") return <MasterCompanies db={db} setDbState={setDbState} />;
-  if (screen === "usuarios") return <MasterUsers db={db} setDbState={setDbState} />;
+  if (screen === "usuarios") return <section className="grid gap-5"><MasterUsers db={db} setDbState={setDbState} /><MasterUserControls db={db} setDbState={setDbState} /></section>;
   if (screen === "planos") return <MasterPlans db={db} setDbState={setDbState} />;
   if (screen === "configuracoes") return <CrudShell title="Configurações SaaS" description="Configurações globais preparadas para evolução."><Panel title="Ambiente">Startt Delivery — produzido por Startt Facilities</Panel></CrudShell>;
   const mrr = db.companies.filter((company) => ["active", "trialing"].includes(company.subscription_status)).reduce((sum, company) => sum + company.monthly_price, 0);
@@ -821,7 +952,7 @@ function MasterCompanies({ db, setDbState }: { db: DatabaseApi; setDbState: Reac
     const created = new Date().toISOString();
     const companyId = form.id || id("cmp");
     const previous = db.companies.find((item) => item.id === form.id);
-    const company: Company = { id: companyId, name: form.name, slug: form.slug, logo_url: previous?.logo_url || "", whatsapp: form.whatsapp, address: form.address, hero_image: previous?.hero_image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1600&q=80", primary_color: form.primary_color, minimum_order: previous?.minimum_order || 25, estimated_delivery_time: previous?.estimated_delivery_time || "35-45 min", is_open: previous?.is_open ?? true, delivery_enabled: previous?.delivery_enabled ?? true, pickup_enabled: previous?.pickup_enabled ?? true, status: form.status, plan: plan?.name || "Start", is_registration_enabled: form.is_registration_enabled, plan_id: form.plan_id, subscription_status: form.subscription_status, monthly_price: Number(form.monthly_price), due_day: Number(form.due_day), next_due_date: form.next_due_date, last_payment_date: previous?.last_payment_date || "", payment_notes: form.payment_notes, footer_message: previous?.footer_message || "produzido por Startt Facilities", opening_hours: previous?.opening_hours || "Aberto hoje", created_at: previous?.created_at || created };
+    const company: Company = { id: companyId, name: form.name, slug: form.slug, logo_url: previous?.logo_url || "", banner_url: previous?.banner_url || previous?.hero_image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1600&q=80", whatsapp: form.whatsapp, address: form.address, hero_image: previous?.hero_image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1600&q=80", primary_color: form.primary_color, minimum_order: previous?.minimum_order || 25, estimated_delivery_time: previous?.estimated_delivery_time || "35-45 min", is_open: previous?.is_open ?? true, delivery_enabled: previous?.delivery_enabled ?? true, pickup_enabled: previous?.pickup_enabled ?? true, status: form.status, plan: plan?.name || "Start", is_registration_enabled: form.is_registration_enabled, plan_id: form.plan_id, subscription_status: form.subscription_status, monthly_price: Number(form.monthly_price), due_day: Number(form.due_day), next_due_date: form.next_due_date, last_payment_date: previous?.last_payment_date || "", payment_notes: form.payment_notes, footer_message: previous?.footer_message || "produzido por Startt Facilities", opening_hours: previous?.opening_hours || "Aberto hoje", created_at: previous?.created_at || created };
     setDbState((current) => ({ ...current, companies: form.id ? current.companies.map((item) => item.id === form.id ? company : item) : [company, ...current.companies], settings: form.id ? current.settings : [{ id: id("set"), company_id: companyId, critical_locked: false }, ...current.settings], print_settings: form.id ? current.print_settings : [{ company_id: companyId, auto_print_orders: false, auto_print_cash_sales: false, printer_name: "", paper_width: "80mm", copies: 1, footer_text: "Startt Delivery — produzido por Startt Facilities" }, ...current.print_settings], users: !form.id && form.admin_email ? [{ id: id("usr"), company_id: companyId, name: "Admin inicial", email: form.admin_email, password: "123456", role: "dono", is_active: true, created_at: created }, ...current.users] : current.users }));
     setFormOpen(false);
     notify("success", form.id ? "Empresa atualizada com sucesso." : "Empresa criada com sucesso.");
@@ -863,8 +994,49 @@ function MasterPlans({ db, setDbState }: { db: DatabaseApi; setDbState: React.Di
   return <CrudShell title="Planos" description="Criar, editar, desativar e excluir planos não usados."><form onSubmit={save} className="grid gap-3 rounded-lg border bg-white p-4"><div className="grid gap-3 md:grid-cols-5"><Input placeholder="Nome" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><Input placeholder="Preço mensal" value={form.monthly_price} onChange={(value) => setForm({ ...form, monthly_price: value })} /><Input placeholder="Máx. produtos" value={form.max_products} onChange={(value) => setForm({ ...form, max_products: value })} /><Input placeholder="Máx. usuários" value={form.max_users} onChange={(value) => setForm({ ...form, max_users: value })} /><button className="rounded-lg bg-startt-green px-4 font-black text-white">{form.id ? "Salvar plano" : "Criar plano"}</button></div><div className="flex flex-wrap gap-4"><label className="flex gap-2 font-bold"><input type="checkbox" checked={form.allow_reports} onChange={(event) => setForm({ ...form, allow_reports: event.target.checked })} /> Relatórios</label><label className="flex gap-2 font-bold"><input type="checkbox" checked={form.allow_printing} onChange={(event) => setForm({ ...form, allow_printing: event.target.checked })} /> Impressão</label><label className="flex gap-2 font-bold"><input type="checkbox" checked={form.allow_coupons} onChange={(event) => setForm({ ...form, allow_coupons: event.target.checked })} /> Cupons</label><label className="flex gap-2 font-bold"><input type="checkbox" checked={form.is_active} onChange={(event) => setForm({ ...form, is_active: event.target.checked })} /> Ativo</label></div></form><Table headers={["Plano", "Preço", "Produtos", "Usuários", "Recursos", "Status", "Ações"]} rows={db.plans.map((plan) => [plan.name, money(plan.monthly_price), String(plan.max_products), String(plan.max_users), `${plan.allow_reports ? "Relatórios " : ""}${plan.allow_printing ? "Impressão " : ""}${plan.allow_coupons ? "Cupons" : ""}` || "Básico", plan.is_active ? "Ativo" : "Inativo", <div key={plan.id} className="flex gap-2"><button className="rounded-lg border px-3 py-2 font-bold" onClick={() => edit(plan)}>Editar</button><button className="rounded-lg border px-3 py-2 font-bold" onClick={() => setDbState((current) => ({ ...current, plans: current.plans.map((item) => item.id === plan.id ? { ...item, is_active: !item.is_active } : item) }))}>Ativar/desativar</button><button className="rounded-lg bg-startt-red px-3 py-2 font-bold text-white" onClick={() => remove(plan)}>Excluir</button></div>])} /></CrudShell>;
 }
 
-function ProductCard({ product, category, onAdd }: { product: Product; category: string; onAdd: () => void }) {
-  return <article className="grid overflow-hidden rounded-lg border border-black/10 bg-white shadow-sm"><div className="relative h-48 overflow-hidden"><img className="h-full w-full object-cover" src={product.image} alt={product.name} />{product.badge && <span className="absolute left-3 top-3 rounded-full bg-startt-yellow px-3 py-1 text-xs font-black">{product.badge}</span>}</div><div className="grid gap-4 p-4"><div><p className="mb-1 text-xs font-black uppercase text-startt-green">{category}</p><h3 className="text-xl font-black">{product.name}</h3><p className="mt-2 text-sm leading-6 text-startt-muted">{product.description}</p></div><div className="flex items-center justify-between"><strong className="text-xl">{money(product.price)}</strong><button onClick={onAdd} aria-label={`Adicionar ${product.name}`} className="grid h-10 w-10 place-items-center rounded-lg bg-startt-green text-white"><Plus size={18} /></button></div></div></article>;
+function MasterUserControls({ db, setDbState }: { db: DatabaseApi; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
+  function updateMaster(userId: string, patch: Partial<MockDatabaseState["master_users"][number]>) {
+    setDbState((current) => ({ ...current, master_users: current.master_users.map((user) => user.id === userId ? { ...user, ...patch } : user) }));
+    notify("success", "Usuário master atualizado com sucesso.");
+  }
+  function resetMaster(userId: string) {
+    if (!confirm("Redefinir senha deste usuário master?")) return;
+    const password = prompt("Nova senha", "123456");
+    if (!password) return;
+    updateMaster(userId, { password });
+  }
+  return <CrudShell title="Acessos Master" description="Controle de login, senha e bloqueio dos usuários master."><Table headers={["Nome", "E-mail", "Status", "Ações"]} rows={db.master_users.map((user) => [user.name, <Input key={`${user.id}-email`} value={user.email} placeholder="E-mail" onChange={(email) => updateMaster(user.id, { email })} />, user.is_active ? "Ativo" : "Bloqueado", <div key={user.id} className="flex flex-wrap gap-2"><button className="rounded-lg border px-3 py-2 font-bold" onClick={() => resetMaster(user.id)}>Redefinir senha</button><button className="rounded-lg border px-3 py-2 font-bold" onClick={() => updateMaster(user.id, { is_active: !user.is_active })}>{user.is_active ? "Bloquear" : "Desbloquear"}</button></div>])} /></CrudShell>;
+}
+
+function ProductCard({ product, category, onOpen, onAdd }: { product: Product; category: string; onOpen: () => void; onAdd: () => void }) {
+  return <article onClick={onOpen} className="grid cursor-pointer overflow-hidden rounded-lg border border-black/10 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-xl"><div className="relative h-48 overflow-hidden"><img className="h-full w-full object-cover" src={product.image} alt={product.name} onError={(event) => { event.currentTarget.src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=900&q=80"; }} />{product.badge && <span className="absolute left-3 top-3 rounded-full bg-startt-yellow px-3 py-1 text-xs font-black">{product.badge}</span>}</div><div className="grid gap-4 p-4"><div><p className="mb-1 text-xs font-black uppercase text-startt-green">{category}</p><h3 className="text-xl font-black">{product.name}</h3><p className="mt-2 text-sm leading-6 text-startt-muted">{product.description}</p></div><div className="flex items-center justify-between"><strong className="text-xl">{money(product.price)}</strong><button onClick={(event) => { event.stopPropagation(); onAdd(); }} aria-label={`Adicionar ${product.name}`} className="grid h-10 w-10 place-items-center rounded-lg bg-startt-green text-white"><Plus size={18} /></button></div></div></article>;
+}
+
+function ProductModal({ product, category, onClose, onAdd }: { product: Product; category: string; onClose: () => void; onAdd: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[70] grid place-items-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+      <button className="absolute inset-0 cursor-default" onClick={onClose} aria-label="Fechar produto" />
+      <section className="relative grid max-h-[92vh] w-[min(720px,100%)] overflow-hidden rounded-lg bg-white shadow-2xl animate-in zoom-in-95 duration-200 md:grid-cols-[280px_1fr]">
+        <button onClick={onClose} className="absolute right-3 top-3 z-10 grid h-10 w-10 place-items-center rounded-lg bg-white/95 shadow" aria-label="Fechar"><X size={20} /></button>
+        <img className="h-64 w-full object-cover md:h-full" src={product.image} alt={product.name} onError={(event) => { event.currentTarget.src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=900&q=80"; }} />
+        <div className="grid gap-4 overflow-auto p-5">
+          <div>
+            <span className="text-xs font-black uppercase text-startt-green">{category}</span>
+            <h2 className="mt-1 text-3xl font-black">{product.name}</h2>
+            <p className="mt-3 leading-7 text-startt-muted">{product.description}</p>
+          </div>
+          <Panel title="Ingredientes">
+            <p className="text-sm leading-6 text-startt-muted">{product.ingredients || "Ingredientes não informados."}</p>
+          </Panel>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span className="text-sm font-bold text-startt-muted">Preparo: {product.preparation_time} min</span>
+            <strong className="text-2xl">{money(product.price)}</strong>
+          </div>
+          <button onClick={onAdd} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-startt-green px-4 font-black text-white"><Plus size={18} /> Adicionar ao carrinho</button>
+        </div>
+      </section>
+    </div>
+  );
 }
 
 function CrudShell({ title, description, children }: { title: string; description: string; children: React.ReactNode }) { return <section className="grid gap-5"><div className="rounded-lg border border-black/10 bg-white p-5"><span className="text-xs font-black uppercase text-startt-green">Admin</span><h1 className="mt-1 text-4xl font-black">{title}</h1><p className="mt-2 text-startt-muted">{description}</p></div>{children}</section>; }

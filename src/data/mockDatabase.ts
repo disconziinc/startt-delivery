@@ -1,6 +1,6 @@
 export type ID = string;
 
-export type CompanyStatus = "trial" | "active" | "blocked" | "canceled";
+export type CompanyStatus = "trial" | "active" | "blocked" | "canceled" | "disabled";
 export type SubscriptionStatus = "trialing" | "active" | "overdue" | "canceled";
 export type UserRole = "dono" | "gerente" | "caixa" | "atendente";
 export type MasterRole = "master";
@@ -21,6 +21,7 @@ export type Company = {
   name: string;
   slug: string;
   logo_url: string;
+  banner_url: string;
   whatsapp: string;
   address: string;
   hero_image: string;
@@ -74,6 +75,7 @@ export type MasterUser = {
   email: string;
   password: string;
   role: MasterRole;
+  is_active: boolean;
 };
 
 export type Category = {
@@ -92,6 +94,7 @@ export type Product = {
   description: string;
   price: number;
   image: string;
+  ingredients: string;
   preparation_time: number;
   featured: boolean;
   active: boolean;
@@ -235,6 +238,7 @@ export const initialMockDatabase: MockDatabaseState = {
       name: "DogExpress POA",
       slug: "dogexpress",
       logo_url: "",
+      banner_url: "https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=1600&q=80",
       whatsapp: "5551999990000",
       address: "Av. Cristóvão Colombo, 820 - Porto Alegre",
       hero_image: "https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=1600&q=80",
@@ -263,6 +267,7 @@ export const initialMockDatabase: MockDatabaseState = {
       name: "Pizzaria do João",
       slug: "pizzariadojoao",
       logo_url: "",
+      banner_url: "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=1600&q=80",
       whatsapp: "5551988880000",
       address: "Rua das Massas, 45 - Centro",
       hero_image: "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=1600&q=80",
@@ -291,6 +296,7 @@ export const initialMockDatabase: MockDatabaseState = {
       name: "Burguer do Paulo",
       slug: "burguerdopaulo",
       logo_url: "",
+      banner_url: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=1600&q=80",
       whatsapp: "5551977770000",
       address: "Rua do Grill, 318 - Moinhos",
       hero_image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=1600&q=80",
@@ -315,7 +321,7 @@ export const initialMockDatabase: MockDatabaseState = {
       created_at: "2026-03-12T10:00:00.000Z",
     },
   ],
-  master_users: [{ id: "mst_1", name: "Admin Master", email: "master@startt.com", password: "123456", role: "master" }],
+  master_users: [{ id: "mst_1", name: "Admin Master", email: "master@startt.com", password: "123456", role: "master", is_active: true }],
   users: [
     { id: "usr_dog_owner", company_id: "cmp_dogexpress", name: "Marina Alves", email: "admin@dogexpress.com", password: "123456", role: "dono", is_active: true, created_at: now },
     { id: "usr_dog_cash", company_id: "cmp_dogexpress", name: "Caixa Dog", email: "caixa@dogexpress.com", password: "123456", role: "caixa", is_active: true, created_at: now },
@@ -333,13 +339,13 @@ export const initialMockDatabase: MockDatabaseState = {
     { id: "cat_bur_2", company_id: "cmp_burguerdopaulo", name: "Combos", sort_order: 2, active: true },
   ].map((category) => category.company_id === "cmp_burguerdopaulo" ? { ...category, company_id: "cmp_burguerpaulo" } : category),
   products: [
-    { id: "prd_dog_1", company_id: "cmp_dogexpress", category_id: "cat_dog_1", name: "Dog Startt Clássico", description: "Pão macio, salsicha premium, molho da casa, batata palha e milho.", price: 22.9, image: "https://images.unsplash.com/photo-1619740455993-9e612b1af08a?auto=format&fit=crop&w=900&q=80", preparation_time: 12, featured: true, active: true, badge: "Mais pedido" },
-    { id: "prd_dog_2", company_id: "cmp_dogexpress", category_id: "cat_dog_2", name: "Combo Dog + Refri", description: "Dog clássico, refrigerante lata e embalagem lacrada para viagem.", price: 31.9, image: "https://images.unsplash.com/photo-1625813506062-0aeb1d7a094b?auto=format&fit=crop&w=900&q=80", preparation_time: 15, featured: false, active: true, badge: "Combo" },
-    { id: "prd_dog_3", company_id: "cmp_dogexpress", category_id: "cat_dog_3", name: "Refrigerante lata", description: "Coca-Cola, Guaraná ou Sprite. 350 ml.", price: 7.9, image: "https://images.unsplash.com/photo-1581006852262-e4307cf6283a?auto=format&fit=crop&w=900&q=80", preparation_time: 1, featured: false, active: true },
-    { id: "prd_piz_1", company_id: "cmp_pizzariajoao", category_id: "cat_piz_1", name: "Pizza Margherita", description: "Molho artesanal, muçarela, tomate, manjericão e azeite.", price: 59.9, image: "https://images.unsplash.com/photo-1604382354936-07c5d9983bd3?auto=format&fit=crop&w=900&q=80", preparation_time: 30, featured: true, active: true, badge: "Forno a lenha" },
-    { id: "prd_piz_2", company_id: "cmp_pizzariajoao", category_id: "cat_piz_2", name: "Calzone quatro queijos", description: "Massa fina, parmesão, provolone, gorgonzola e muçarela.", price: 42.5, image: "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?auto=format&fit=crop&w=900&q=80", preparation_time: 24, featured: false, active: true },
-    { id: "prd_bur_1", company_id: "cmp_burguerpaulo", category_id: "cat_bur_1", name: "Smash Paulo", description: "Dois smash burgers, cheddar, cebola caramelizada e molho especial.", price: 34.9, image: "https://images.unsplash.com/photo-1550317138-10000687a72b?auto=format&fit=crop&w=900&q=80", preparation_time: 18, featured: true, active: true, badge: "Assinatura" },
-    { id: "prd_bur_2", company_id: "cmp_burguerpaulo", category_id: "cat_bur_2", name: "Combo Smash", description: "Smash Paulo, fritas rústicas e bebida lata.", price: 47.9, image: "https://images.unsplash.com/photo-1572802419224-296b0aeee0d9?auto=format&fit=crop&w=900&q=80", preparation_time: 22, featured: false, active: true },
+    { id: "prd_dog_1", company_id: "cmp_dogexpress", category_id: "cat_dog_1", name: "Dog Startt Clássico", description: "Pão macio, salsicha premium, molho da casa, batata palha e milho.", price: 22.9, image: "https://images.unsplash.com/photo-1619740455993-9e612b1af08a?auto=format&fit=crop&w=900&q=80", ingredients: "Pão, salsicha premium, milho, batata palha, ketchup, maionese e molho da casa", preparation_time: 12, featured: true, active: true, badge: "Mais pedido" },
+    { id: "prd_dog_2", company_id: "cmp_dogexpress", category_id: "cat_dog_2", name: "Combo Dog + Refri", description: "Dog clássico, refrigerante lata e embalagem lacrada para viagem.", price: 31.9, image: "https://images.unsplash.com/photo-1625813506062-0aeb1d7a094b?auto=format&fit=crop&w=900&q=80", ingredients: "Dog clássico, refrigerante lata e embalagem para viagem", preparation_time: 15, featured: false, active: true, badge: "Combo" },
+    { id: "prd_dog_3", company_id: "cmp_dogexpress", category_id: "cat_dog_3", name: "Refrigerante lata", description: "Coca-Cola, Guaraná ou Sprite. 350 ml.", price: 7.9, image: "https://images.unsplash.com/photo-1581006852262-e4307cf6283a?auto=format&fit=crop&w=900&q=80", ingredients: "Bebida lata 350 ml", preparation_time: 1, featured: false, active: true },
+    { id: "prd_piz_1", company_id: "cmp_pizzariajoao", category_id: "cat_piz_1", name: "Pizza Margherita", description: "Molho artesanal, muçarela, tomate, manjericão e azeite.", price: 59.9, image: "https://images.unsplash.com/photo-1604382354936-07c5d9983bd3?auto=format&fit=crop&w=900&q=80", ingredients: "Massa artesanal, molho de tomate, muçarela, tomate, manjericão e azeite", preparation_time: 30, featured: true, active: true, badge: "Forno a lenha" },
+    { id: "prd_piz_2", company_id: "cmp_pizzariajoao", category_id: "cat_piz_2", name: "Calzone quatro queijos", description: "Massa fina, parmesão, provolone, gorgonzola e muçarela.", price: 42.5, image: "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?auto=format&fit=crop&w=900&q=80", ingredients: "Massa fina, parmesão, provolone, gorgonzola e muçarela", preparation_time: 24, featured: false, active: true },
+    { id: "prd_bur_1", company_id: "cmp_burguerpaulo", category_id: "cat_bur_1", name: "Smash Paulo", description: "Dois smash burgers, cheddar, cebola caramelizada e molho especial.", price: 34.9, image: "https://images.unsplash.com/photo-1550317138-10000687a72b?auto=format&fit=crop&w=900&q=80", ingredients: "Pão brioche, dois smash burgers, cheddar, cebola caramelizada e molho especial", preparation_time: 18, featured: true, active: true, badge: "Assinatura" },
+    { id: "prd_bur_2", company_id: "cmp_burguerpaulo", category_id: "cat_bur_2", name: "Combo Smash", description: "Smash Paulo, fritas rústicas e bebida lata.", price: 47.9, image: "https://images.unsplash.com/photo-1572802419224-296b0aeee0d9?auto=format&fit=crop&w=900&q=80", ingredients: "Smash Paulo, fritas rústicas e bebida lata", preparation_time: 22, featured: false, active: true },
   ],
   customers: [
     { id: "cus_dog_1", company_id: "cmp_dogexpress", name: "Rafael Costa", phone: "(51) 99999-1010", address: "Centro", total_spent: 206.5, last_order_at: now, created_at: now },
