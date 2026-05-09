@@ -115,6 +115,8 @@ const adminNav: Array<{ id: AdminScreen; label: string; icon: React.ReactNode }>
   { id: "usuarios", label: "Usuários", icon: <UserRound size={18} /> },
 ];
 
+const weekDays = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"];
+
 const roleAccess: Record<UserRole, AdminScreen[]> = {
   dono: adminNav.map((item) => item.id),
   gerente: adminNav.map((item) => item.id).filter((id) => !["usuarios", "configuracoes"].includes(id)),
@@ -143,8 +145,14 @@ function isValidSlug(slug: string) {
 }
 
 function positiveNumber(value: string | number) {
-  const number = Number(value);
+  const number = parseMoney(value);
   return Number.isFinite(number) && number > 0;
+}
+
+function parseMoney(value: string | number) {
+  if (typeof value === "number") return value;
+  const normalized = value.trim().replace(/\./g, "").replace(",", ".");
+  return Number(normalized);
 }
 
 function normalizeText(value: string) {
@@ -917,7 +925,10 @@ function ProductsManager({ company, products, categories, plan, setDbState }: { 
   const blank = { id: "", name: "", description: "", ingredients: "", price: "", category_id: categories[0]?.id || "", image: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=900&q=80", preparation_time: "10", badge: "", featured: false, active: true };
   const [form, setForm] = useState(blank);
   const [formOpen, setFormOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const [saving, setSaving] = useState(false);
+  const visibleProducts = products.filter((product) => (categoryFilter === "all" || product.category_id === categoryFilter) && `${product.name} ${product.description}`.toLowerCase().includes(search.toLowerCase()));
   function save(event: React.FormEvent) {
     event.preventDefault();
     if (saving) return;
@@ -933,7 +944,7 @@ function ProductsManager({ company, products, categories, plan, setDbState }: { 
       notify("error", "Limite de produtos do plano atingido. Entre em contato com a Startt Facilities.");
       return;
     }
-    const product: Product = { id: form.id || id("prd"), company_id: company.id, category_id: form.category_id, name: form.name, description: form.description, ingredients: form.ingredients, price: Number(form.price), image: form.image, preparation_time: Number(form.preparation_time), featured: form.featured, active: form.active, badge: form.badge || undefined };
+    const product: Product = { id: form.id || id("prd"), company_id: company.id, category_id: form.category_id, name: form.name, description: form.description, ingredients: form.ingredients, price: parseMoney(form.price), image: form.image, preparation_time: Number(form.preparation_time) || 0, featured: form.featured, active: form.active, badge: form.badge || undefined };
     const editing = Boolean(form.id);
     runSave(setSaving, () => {
       setDbState((current) => ({ ...current, products: form.id ? current.products.map((item) => item.id === form.id && item.company_id === company.id ? product : item) : [product, ...current.products] }));
@@ -945,27 +956,33 @@ function ProductsManager({ company, products, categories, plan, setDbState }: { 
   function edit(product: Product) { setForm({ id: product.id, name: product.name, description: product.description, ingredients: product.ingredients || "", price: String(product.price), category_id: product.category_id, image: product.image, preparation_time: String(product.preparation_time), badge: product.badge || "", featured: product.featured, active: product.active }); setFormOpen(true); }
   function remove(product: Product) { if (confirm(`Excluir ${product.name}?`)) { setDbState((current) => ({ ...current, products: current.products.filter((item) => !(item.id === product.id && item.company_id === company.id)) })); notify("success", "Produto excluído com sucesso."); } }
   return (
-    <CrudShell title="Produtos" description="Cadastrar, editar, excluir e ativar/desativar produtos.">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-black/10 bg-white p-4 shadow-card">
+    <CrudShell title="Produtos" description="Ative ou desative produtos conforme disponibilidade">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div><strong>{products.length} produtos cadastrados</strong><p className="text-sm text-startt-muted">Limite do plano: {plan?.max_products || "sem limite visível"}</p></div>
         <button onClick={create} className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-startt-green px-4 font-black text-white shadow-lg shadow-startt-green/20"><Plus size={18} /> Novo produto</button>
       </div>
-      <FormDrawer open={formOpen} title={form.id ? "Editar produto" : "Novo produto"} description="Organize dados comerciais, foto, selo e disponibilidade do item." onClose={() => setFormOpen(false)}>
+      <div className="grid gap-3 sm:grid-cols-[1fr_220px]">
+        <Input placeholder="Buscar produto..." value={search} onChange={setSearch} />
+        <Select value={categoryFilter} onChange={setCategoryFilter}><option value="all">Todas</option>{categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</Select>
+      </div>
+      <FormModal open={formOpen} title={form.id ? "Editar produto" : "Novo produto"} onClose={() => setFormOpen(false)}>
         <form onSubmit={save} className="grid gap-4">
-          <ImageUpload label="Foto do produto" value={form.image} onChange={(value) => setForm({ ...form, image: value })} />
-          <div className="grid gap-3 sm:grid-cols-2"><Input placeholder="Nome" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><Input placeholder="Preço" value={form.price} onChange={(value) => setForm({ ...form, price: value })} /></div>
-          <Select value={form.category_id} onChange={(value) => setForm({ ...form, category_id: value })}>{categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</Select>
-          <div className="grid gap-3 sm:grid-cols-2"><Input placeholder="Tempo de preparo" value={form.preparation_time} onChange={(value) => setForm({ ...form, preparation_time: value })} /><Input placeholder="Destaque/selo" value={form.badge} onChange={(value) => setForm({ ...form, badge: value })} /></div>
-          <textarea className="min-h-28 rounded-xl border border-startt-border px-3 py-3 text-sm shadow-sm outline-startt-green focus:border-startt-green focus:shadow-input" placeholder="Descrição" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
-          <textarea className="min-h-24 rounded-xl border border-startt-border px-3 py-3 text-sm shadow-sm outline-startt-green focus:border-startt-green focus:shadow-input" placeholder="Ingredientes" value={form.ingredients} onChange={(event) => setForm({ ...form, ingredients: event.target.value })} />
+          <label className="grid gap-2 text-sm font-bold">Nome *<Input placeholder="Ex: Dog Especial" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /></label>
+          <div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-2 text-sm font-bold">Preço *<Input placeholder="0,00" value={form.price} onChange={(value) => setForm({ ...form, price: value })} /></label><label className="grid gap-2 text-sm font-bold">Categoria<Select value={form.category_id} onChange={(value) => setForm({ ...form, category_id: value })}>{categories.map((item) => <option key={item.id} value={item.id}>🌭 {item.name}</option>)}</Select></label></div>
+          <label className="grid gap-2 text-sm font-bold">Descrição<textarea className="min-h-28 rounded-xl border border-startt-border px-3 py-3 text-sm shadow-sm outline-startt-green focus:border-startt-green focus:shadow-input" placeholder="Descreva o produto..." value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
+          <ImageUpload label="Imagem do produto" value={form.image} onChange={(value) => setForm({ ...form, image: value })} />
+          <div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-2 text-sm font-bold">Ordem<Input placeholder="0" value={form.preparation_time} onChange={(value) => setForm({ ...form, preparation_time: value })} /></label><label className="grid gap-2 text-sm font-bold">Notas internas<Input placeholder="Apenas admin vê" value={form.ingredients} onChange={(value) => setForm({ ...form, ingredients: value })} /></label></div>
           <div className="grid gap-2 rounded-2xl bg-startt-paper p-4">
-            <label className="flex items-center gap-2 font-bold"><input type="checkbox" checked={form.featured} onChange={(event) => setForm({ ...form, featured: event.target.checked })} /> Produto em destaque</label>
-            <label className="flex items-center gap-2 font-bold"><input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} /> Ativo no cardápio</label>
+            <label className="flex items-center gap-2 font-bold"><input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} /> Ativo</label>
+            <label className="flex items-center gap-2 font-bold"><input type="checkbox" checked={form.featured} onChange={(event) => setForm({ ...form, featured: event.target.checked })} /> Destaque</label>
           </div>
           <button disabled={saving} className="min-h-12 rounded-xl bg-startt-green px-4 font-black text-white shadow-lg shadow-startt-green/20 disabled:opacity-60">{saving ? "Salvando..." : form.id ? "Salvar alterações" : "Criar produto"}</button>
         </form>
-      </FormDrawer>
-      <Table headers={["Produto", "Categoria", "Preço", "Status", "Ações"]} rows={products.map((product) => [product.name, categoryName(product.category_id, categories), money(product.price), product.active ? "Ativo" : "Inativo", <Actions key={product.id} onEdit={() => edit(product)} onDelete={() => remove(product)} />])} />
+      </FormModal>
+      <div className="grid gap-3">
+        {visibleProducts.map((product) => <article key={product.id} className="flex items-center gap-3 rounded-3xl border border-black/10 bg-white p-4 shadow-sm"><span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-startt-rose text-xl">🌭</span><div className="min-w-0 flex-1"><strong className="block truncate">{product.name}</strong><p className="text-sm text-startt-muted">🌭 {categoryName(product.category_id, categories)} • {money(product.price)}</p></div><label className="relative inline-flex cursor-pointer items-center"><input type="checkbox" className="peer sr-only" checked={product.active} onChange={() => setDbState((current) => ({ ...current, products: current.products.map((item) => item.id === product.id && item.company_id === company.id ? { ...item, active: !item.active } : item) }))} /><span className="h-6 w-11 rounded-full bg-startt-border transition peer-checked:bg-startt-green" /><span className="absolute left-1 h-4 w-4 rounded-full bg-white transition peer-checked:translate-x-5" /></label><button className="grid h-10 w-10 place-items-center rounded-xl border border-black/10" onClick={() => edit(product)} aria-label="Editar"><Settings size={17} /></button><button className="grid h-10 w-10 place-items-center rounded-xl border border-black/10 text-startt-red" onClick={() => remove(product)} aria-label="Excluir"><Trash2 size={17} /></button></article>)}
+        {!visibleProducts.length && <Empty text="Nenhum produto encontrado." />}
+      </div>
     </CrudShell>
   );
 }
@@ -993,7 +1010,7 @@ function CustomersManager({ company, customers, setDbState }: { company: Company
 function CouponsManager({ company, coupons, plan, setDbState }: { company: Company; coupons: Coupon[]; plan?: Plan; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
   const blank = { code: "", type: "percentual", value: "", minimum_order: "0", usage_limit: "100", expires_at: "2026-12-31" };
   const [form, setForm] = useState(blank);
-  function add() { if (!form.code || !positiveNumber(form.value)) { notify("error", "Informe código e valor válido para o cupom."); return; } if (plan && !plan.allow_coupons) { notify("error", "Seu plano atual não inclui este recurso. Entre em contato com a Startt Facilities."); return; } setDbState((current) => ({ ...current, coupons: [{ id: id("cup"), company_id: company.id, code: form.code.toUpperCase(), type: form.type as Coupon["type"], value: Number(form.value), minimum_order: Number(form.minimum_order), usage_limit: Number(form.usage_limit), used_count: 0, expires_at: form.expires_at, active: true }, ...current.coupons] })); setForm(blank); notify("success", "Cupom criado com sucesso."); }
+  function add() { if (!form.code || !positiveNumber(form.value)) { notify("error", "Informe código e valor válido para o cupom."); return; } if (plan && !plan.allow_coupons) { notify("error", "Seu plano atual não inclui este recurso. Entre em contato com a Startt Facilities."); return; } setDbState((current) => ({ ...current, coupons: [{ id: id("cup"), company_id: company.id, code: form.code.toUpperCase(), type: form.type as Coupon["type"], value: parseMoney(form.value), minimum_order: parseMoney(form.minimum_order) || 0, usage_limit: Number(form.usage_limit), used_count: 0, expires_at: form.expires_at, active: true }, ...current.coupons] })); setForm(blank); notify("success", "Cupom criado com sucesso."); }
   function toggle(coupon: Coupon) { setDbState((current) => ({ ...current, coupons: current.coupons.map((item) => item.id === coupon.id && item.company_id === company.id ? { ...item, active: !item.active } : item) })); }
   return <CrudShell title="Cupons" description="Criar, editar, excluir e ativar/desativar cupons."><div className="grid gap-3 rounded-lg border border-black/10 bg-white p-4 md:grid-cols-6"><Input placeholder="Código" value={form.code} onChange={(value) => setForm({ ...form, code: value })} /><Select value={form.type} onChange={(value) => setForm({ ...form, type: value })}><option value="percentual">Percentual</option><option value="fixo">Valor fixo</option></Select><Input placeholder="Valor" value={form.value} onChange={(value) => setForm({ ...form, value })} /><Input placeholder="Pedido mínimo" value={form.minimum_order} onChange={(value) => setForm({ ...form, minimum_order: value })} /><Input placeholder="Limite" value={form.usage_limit} onChange={(value) => setForm({ ...form, usage_limit: value })} /><button onClick={add} className="rounded-lg bg-startt-green px-4 font-black text-white">Criar</button></div><Table headers={["Código", "Tipo", "Valor", "Mínimo", "Uso", "Status", "Ações"]} rows={coupons.map((coupon) => [coupon.code, coupon.type, coupon.type === "percentual" ? `${coupon.value}%` : money(coupon.value), money(coupon.minimum_order), `${coupon.used_count}/${coupon.usage_limit}`, coupon.active ? "Ativo" : "Inativo", <div key={coupon.id} className="flex gap-2"><button className="rounded-lg border px-3 py-2 font-bold" onClick={() => toggle(coupon)}>Ativar/desativar</button><button className="rounded-lg bg-startt-red px-3 py-2 font-bold text-white" onClick={() => setDbState((current) => ({ ...current, coupons: current.coupons.filter((item) => !(item.id === coupon.id && item.company_id === company.id)) }))}>Excluir</button></div>])} /></CrudShell>;
 }
@@ -1013,7 +1030,7 @@ function Reports({ company, bundle }: { company: Company; bundle: ReturnType<Dat
 
 function ZonesManager({ company, zones, setDbState }: { company: Company; zones: DeliveryZone[]; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
   const [form, setForm] = useState({ neighborhood: "", fee: "", estimated_minutes: "" });
-  function add() { if (!form.neighborhood || !positiveNumber(form.fee)) { notify("error", "Informe bairro e valor de frete válido."); return; } setDbState((current) => ({ ...current, delivery_zones: [{ id: id("zon"), company_id: company.id, neighborhood: form.neighborhood, fee: Number(form.fee), estimated_minutes: form.estimated_minutes, active: true }, ...current.delivery_zones] })); setForm({ neighborhood: "", fee: "", estimated_minutes: "" }); notify("success", "Frete cadastrado com sucesso."); }
+  function add() { if (!form.neighborhood || !positiveNumber(form.fee)) { notify("error", "Informe bairro e valor de frete válido."); return; } setDbState((current) => ({ ...current, delivery_zones: [{ id: id("zon"), company_id: company.id, neighborhood: form.neighborhood, fee: parseMoney(form.fee), estimated_minutes: form.estimated_minutes, active: true }, ...current.delivery_zones] })); setForm({ neighborhood: "", fee: "", estimated_minutes: "" }); notify("success", "Frete cadastrado com sucesso."); }
   return <CrudShell title="Fretes" description="Bairros ativos aparecem no checkout público e aplicam frete automaticamente."><div className="grid gap-3 rounded-lg border border-black/10 bg-white p-4 md:grid-cols-4"><Input placeholder="Bairro" value={form.neighborhood} onChange={(value) => setForm({ ...form, neighborhood: value })} /><Input placeholder="Valor do frete" value={form.fee} onChange={(value) => setForm({ ...form, fee: value })} /><Input placeholder="Tempo estimado" value={form.estimated_minutes} onChange={(value) => setForm({ ...form, estimated_minutes: value })} /><button onClick={add} className="rounded-lg bg-startt-green px-4 font-black text-white">Cadastrar</button></div><Table headers={["Bairro", "Frete", "Tempo", "Status", "Ações"]} rows={zones.map((zone) => [zone.neighborhood, money(zone.fee), zone.estimated_minutes, zone.active ? "Ativo" : "Inativo", <button key={zone.id} className="rounded-lg border px-3 py-2 font-bold" onClick={() => setDbState((current) => ({ ...current, delivery_zones: current.delivery_zones.map((item) => item.id === zone.id && item.company_id === company.id ? { ...item, active: !item.active } : item) }))}>Ativar/desativar</button>])} /></CrudShell>;
 }
 
@@ -1027,7 +1044,17 @@ function PrintManager({ company, settings, setDbState }: { company: Company; set
 function CompanySettings({ company, setDbState }: { company: Company; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
   const [form, setForm] = useState(company);
   const [saving, setSaving] = useState(false);
-  function save() { if (saving) return; runSave(setSaving, () => setDbState((current) => ({ ...current, companies: current.companies.map((item) => item.id === company.id ? { ...form, hero_image: form.banner_url || form.hero_image } : item) })), "Configurações salvas com sucesso."); }
+  const defaultHour = company.opening_hours.match(/\d{1,2}:\d{2}[- às]+\d{1,2}:?\d{0,2}/)?.[0]?.replace(" às ", "-") || "18:00-23:00";
+  const [hours, setHours] = useState(() => weekDays.map((day) => ({ day, active: company.is_open, time: defaultHour })));
+  function openingHoursSummary() {
+    const active = hours.filter((item) => item.active);
+    if (!active.length) return "Fechado hoje";
+    const sameTime = active.every((item) => item.time === active[0].time);
+    if (sameTime && active.length === 7) return `Aberto todos os dias, ${active[0].time}`;
+    if (sameTime && active.length === 6 && active.every((item) => item.day !== "Domingo")) return `Aberto Seg-Sáb, ${active[0].time}`;
+    return active.map((item) => `${item.day.slice(0, 3)} ${item.time}`).join(" • ");
+  }
+  function save() { if (saving) return; const opening_hours = openingHoursSummary(); runSave(setSaving, () => setDbState((current) => ({ ...current, companies: current.companies.map((item) => item.id === company.id ? { ...form, opening_hours, is_open: hours.some((hour) => hour.active), hero_image: form.banner_url || form.hero_image } : item) })), "Configurações salvas com sucesso."); }
   return (
     <CrudShell title="Configurações" description="Essas configs alteram o cardápio público da empresa.">
       <div className="grid gap-5 rounded-2xl border border-black/10 bg-white p-4 shadow-card">
@@ -1042,9 +1069,16 @@ function CompanySettings({ company, setDbState }: { company: Company; setDbState
           <Input placeholder="Pedido mínimo" value={String(form.minimum_order)} onChange={(value) => setForm({ ...form, minimum_order: Number(value) || 0 })} />
           <Input placeholder="Tempo estimado" value={form.estimated_delivery_time} onChange={(value) => setForm({ ...form, estimated_delivery_time: value })} />
           <Input placeholder="Cor principal" value={form.primary_color} onChange={(value) => setForm({ ...form, primary_color: value })} />
-          <Input placeholder="Horário de funcionamento" value={form.opening_hours} onChange={(value) => setForm({ ...form, opening_hours: value })} />
           <Input placeholder="Mensagem de rodapé" value={form.footer_message} onChange={(value) => setForm({ ...form, footer_message: value })} />
         </div>
+        <section className="grid gap-3 rounded-2xl border border-black/10 bg-white p-4">
+          <h3 className="text-lg font-black">Horários de funcionamento</h3>
+          <p className="text-sm text-startt-muted">Defina dias e horários. O resumo aparece no cardápio público.</p>
+          <div className="grid gap-2">
+            {hours.map((item, index) => <div key={item.day} className="grid gap-2 rounded-2xl bg-startt-paper p-3 sm:grid-cols-[120px_auto_1fr] sm:items-center"><strong>{item.day}</strong><label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={item.active} onChange={(event) => setHours((current) => current.map((hour, i) => i === index ? { ...hour, active: event.target.checked } : hour))} /> Aberto</label><Input placeholder="18:00-23:00" value={item.time} onChange={(value) => setHours((current) => current.map((hour, i) => i === index ? { ...hour, time: value } : hour))} /></div>)}
+          </div>
+          <span className="rounded-xl bg-startt-rose p-3 text-sm font-bold text-startt-green">{openingHoursSummary()}</span>
+        </section>
         <div className="flex flex-wrap gap-4 rounded-2xl bg-startt-paper p-4">
           <label className="flex gap-2 font-bold"><input type="checkbox" checked={form.is_open} onChange={(e) => setForm({ ...form, is_open: e.target.checked })} /> Aberto</label>
           <label className="flex gap-2 font-bold"><input type="checkbox" checked={form.delivery_enabled} onChange={(e) => setForm({ ...form, delivery_enabled: e.target.checked })} /> Permitir entrega</label>
@@ -1111,7 +1145,7 @@ function MasterCompanies({ db, setDbState }: { db: DatabaseApi; setDbState: Reac
     const created = new Date().toISOString();
     const companyId = form.id || id("cmp");
     const previous = db.companies.find((item) => item.id === form.id);
-    const company: Company = { id: companyId, name: form.name, slug: form.slug, logo_url: previous?.logo_url || "", banner_url: previous?.banner_url || previous?.hero_image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1600&q=80", whatsapp: form.whatsapp, address: form.address, hero_image: previous?.hero_image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1600&q=80", primary_color: form.primary_color, minimum_order: previous?.minimum_order || 25, estimated_delivery_time: previous?.estimated_delivery_time || "35-45 min", is_open: previous?.is_open ?? true, delivery_enabled: previous?.delivery_enabled ?? true, pickup_enabled: previous?.pickup_enabled ?? true, status: form.status, plan: plan?.name || "Start", is_registration_enabled: form.is_registration_enabled, plan_id: form.plan_id, subscription_status: form.subscription_status, monthly_price: Number(form.monthly_price), due_day: Number(form.due_day), next_due_date: form.next_due_date, last_payment_date: previous?.last_payment_date || "", payment_notes: form.payment_notes, footer_message: previous?.footer_message || "produzido por Startt Facilities", opening_hours: previous?.opening_hours || "Aberto hoje", created_at: previous?.created_at || created };
+    const company: Company = { id: companyId, name: form.name, slug: form.slug, logo_url: previous?.logo_url || "", banner_url: previous?.banner_url || previous?.hero_image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1600&q=80", whatsapp: form.whatsapp, address: form.address, hero_image: previous?.hero_image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1600&q=80", primary_color: form.primary_color, minimum_order: previous?.minimum_order || 25, estimated_delivery_time: previous?.estimated_delivery_time || "35-45 min", is_open: previous?.is_open ?? true, delivery_enabled: previous?.delivery_enabled ?? true, pickup_enabled: previous?.pickup_enabled ?? true, status: form.status, plan: plan?.name || "Start", is_registration_enabled: form.is_registration_enabled, plan_id: form.plan_id, subscription_status: form.subscription_status, monthly_price: parseMoney(form.monthly_price), due_day: Number(form.due_day), next_due_date: form.next_due_date, last_payment_date: previous?.last_payment_date || "", payment_notes: form.payment_notes, footer_message: previous?.footer_message || "produzido por Startt Facilities", opening_hours: previous?.opening_hours || "Aberto hoje", created_at: previous?.created_at || created };
     setDbState((current) => ({ ...current, companies: form.id ? current.companies.map((item) => item.id === form.id ? company : item) : [company, ...current.companies], settings: form.id ? current.settings : [{ id: id("set"), company_id: companyId, critical_locked: false }, ...current.settings], print_settings: form.id ? current.print_settings : [{ company_id: companyId, auto_print_orders: false, auto_print_cash_sales: false, printer_name: "", paper_width: "80mm", copies: 1, footer_text: "Startt Delivery — produzido por Startt Facilities" }, ...current.print_settings], users: !form.id && form.admin_email ? [{ id: id("usr"), company_id: companyId, name: "Admin inicial", email: form.admin_email, password: "123456", role: "dono", is_active: true, created_at: created }, ...current.users] : current.users }));
     setFormOpen(false);
     notify("success", form.id ? "Empresa atualizada com sucesso." : "Empresa criada com sucesso.");
@@ -1141,7 +1175,7 @@ function MasterPlans({ db, setDbState }: { db: DatabaseApi; setDbState: React.Di
       notify("error", "Informe nome, preço e limites válidos para o plano.");
       return;
     }
-    const plan: Plan = { id: form.id || id("plan"), name: form.name, monthly_price: Number(form.monthly_price), max_products: Number(form.max_products), max_users: Number(form.max_users), allow_reports: form.allow_reports, allow_printing: form.allow_printing, allow_coupons: form.allow_coupons, is_active: form.is_active };
+    const plan: Plan = { id: form.id || id("plan"), name: form.name, monthly_price: parseMoney(form.monthly_price), max_products: Number(form.max_products), max_users: Number(form.max_users), allow_reports: form.allow_reports, allow_printing: form.allow_printing, allow_coupons: form.allow_coupons, is_active: form.is_active };
     setDbState((current) => ({ ...current, plans: form.id ? current.plans.map((item) => item.id === form.id ? plan : item) : [plan, ...current.plans] }));
     setForm(blank);
     setFormOpen(false);
@@ -1253,6 +1287,19 @@ function FormDrawer({ open, title, description, onClose, children }: { open: boo
 }
 function MenuChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return <button onClick={onClick} className={`min-h-11 min-w-fit rounded-2xl border px-5 text-sm font-bold shadow-sm transition ${active ? "border-startt-green bg-startt-green text-white shadow-lg shadow-startt-green/20" : "border-black/10 bg-white text-startt-ink hover:border-startt-green/40"}`}>{children}</button>;
+}
+function FormModal({ open, title, onClose, children }: { open: boolean; title: string; onClose: () => void; children: React.ReactNode }) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[75] grid place-items-center bg-black/55 p-4 backdrop-blur-sm animate-fade">
+      <button className="absolute inset-0 cursor-default" onClick={onClose} aria-label="Fechar" />
+      <section className="relative max-h-[92vh] w-[min(560px,100%)] overflow-auto rounded-3xl bg-white p-6 shadow-drawer animate-in">
+        <button onClick={onClose} className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-xl hover:bg-startt-soft" aria-label="Fechar"><X size={18} /></button>
+        <h2 className="mb-5 text-center text-2xl font-black">{title}</h2>
+        {children}
+      </section>
+    </div>
+  );
 }
 function QuickLink({ href, title, text, icon }: { href: string; title: string; text: string; icon: React.ReactNode }) {
   return <a href={href} className="flex items-center gap-3 rounded-2xl border border-black/10 bg-white p-4 transition hover:-translate-y-0.5 hover:shadow-card-hover"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-startt-rose text-startt-green">{icon}</span><span><strong className="block">{title}</strong><small className="text-startt-muted">{text}</small></span></a>;
