@@ -11,20 +11,20 @@ export default {
 
       colors: {
         startt: {
-          ink: "#141a10",
-          muted: "#5a6b52",
-          paper: "#f8f9f5",
-          soft: "#eef2e8",
+          ink: "#14110f",
+          muted: "#6f675f",
+          paper: "#faf8f5",
+          soft: "#f3eee8",
           card: "#ffffff",
-          border: "#e2e8da",
-          green: "#116a4b",
-          lime: "#1da86a",
-          teal: "#0d8a6e",
-          yellow: "#f0c040",
-          amber: "#e8a020",
-          red: "#c94a2a",
-          rose: "#f0ebe8",
-          blue: "#2060c0",
+          border: "#e8e1d8",
+          green: "#f26a1b",
+          lime: "#f59e0b",
+          teal: "#c45113",
+          yellow: "#f6b45a",
+          amber: "#d85a16",
+          red: "#c93422",
+          rose: "#fff2ea",
+          blue: "#2563eb",
         },
       },
 
@@ -35,16 +35,16 @@ export default {
       },
 
       boxShadow: {
-        card: "0 1px 4px 0 rgba(20,26,16,.08), 0 0 0 1px rgba(20,26,16,.06)",
+        card: "0 1px 4px 0 rgba(20,17,15,.08), 0 0 0 1px rgba(20,17,15,.06)",
 
         "card-hover":
-          "0 8px 24px -4px rgba(20,26,16,.14), 0 0 0 1px rgba(20,26,16,.06)",
+          "0 18px 40px -18px rgba(20,17,15,.28), 0 0 0 1px rgba(20,17,15,.06)",
 
-        drawer: "0 24px 80px -12px rgba(20,26,16,.28)",
+        drawer: "0 28px 90px -18px rgba(20,17,15,.34)",
 
-        input: "0 0 0 3px rgba(17,106,75,.15)",
+        input: "0 0 0 3px rgba(242,106,27,.16)",
 
-        toast: "0 8px 32px -4px rgba(20,26,16,.24)",
+        toast: "0 8px 32px -4px rgba(20,17,15,.24)",
       },
 
       transitionTimingFunction: {

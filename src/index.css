@@ -11,9 +11,9 @@ html {
 body {
   margin: 0;
   background:
-    radial-gradient(circle at top left, rgba(17, 106, 75, 0.08), transparent 34rem),
-    linear-gradient(180deg, #fbfcf8 0%, #f3f6ee 100%);
-  color: #141a10;
+    radial-gradient(circle at top left, rgba(242, 106, 27, 0.11), transparent 34rem),
+    linear-gradient(180deg, #fffdfa 0%, #f7f2eb 100%);
+  color: #14110f;
   font-family: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
@@ -43,17 +43,29 @@ button:not(:disabled):active {
 }
 
 img {
-  background: #eef2e8;
+  background: #f3eee8;
 }
 
 .glass-panel {
   background: rgba(255, 255, 255, 0.84);
   backdrop-filter: blur(18px);
-  box-shadow: 0 18px 55px -34px rgba(20, 26, 16, 0.55), inset 0 1px 0 rgba(255,255,255,.72);
+  box-shadow: 0 18px 55px -34px rgba(20, 17, 15, 0.55), inset 0 1px 0 rgba(255,255,255,.72);
 }
 
 .premium-ring {
-  box-shadow: 0 0 0 1px rgba(20, 26, 16, 0.07), 0 18px 55px -38px rgba(20, 26, 16, 0.7);
+  box-shadow: 0 0 0 1px rgba(20, 17, 15, 0.07), 0 18px 55px -38px rgba(20, 17, 15, 0.7);
+}
+
+.premium-surface {
+  background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(255,250,245,.9));
+  border: 1px solid rgba(20,17,15,.08);
+  box-shadow: 0 20px 60px -38px rgba(20,17,15,.55);
+}
+
+.accent-text {
+  background: linear-gradient(135deg, #f26a1b 0%, #ad3f10 100%);
+  -webkit-background-clip: text;
+  color: transparent;
 }
 
 .mobile-safe-bottom {
@@ -71,12 +83,12 @@ img {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d0d8c8;
+  background: #dccfc2;
   border-radius: 99px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #a8b89a;
+  background: #c7b09b;
 }
 
 /* Animations */
@@ -129,11 +141,11 @@ img {
 @keyframes sd-pulse-green {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(17, 106, 75, 0.35);
+    box-shadow: 0 0 0 0 rgba(242, 106, 27, 0.34);
   }
 
   50% {
-    box-shadow: 0 0 0 8px rgba(17, 106, 75, 0);
+    box-shadow: 0 0 0 8px rgba(242, 106, 27, 0);
   }
 }
 
@@ -164,14 +176,14 @@ img {
 
 /* Focus ring */
 *:focus-visible {
-  outline: 2px solid #116a4b;
+  outline: 2px solid #f26a1b;
   outline-offset: 2px;
   border-radius: 6px;
 }
 
 /* Custom checkbox */
 input[type="checkbox"] {
-  accent-color: #116a4b;
+  accent-color: #f26a1b;
   width: 16px;
   height: 16px;
 }
@@ -184,8 +196,8 @@ input[type="number"]::-webkit-outer-spin-button {
 
 /* Image upload drop zone */
 .drop-zone-active {
-  border-color: #116a4b !important;
-  background: #f0f7f4 !important;
+  border-color: #f26a1b !important;
+  background: #fff2ea !important;
 }
 
 /* Status badge pulse */
@@ -200,7 +212,7 @@ input[type="number"]::-webkit-outer-spin-button {
 
 /* Table row hover */
 .sd-tr:hover {
-  background: #f8f9f5;
+  background: #fffaf4;
 }
 
 /* Card hover lift */
@@ -210,5 +222,5 @@ input[type="number"]::-webkit-outer-spin-button {
 
 .sd-card-lift:hover {
   transform: translateY(-2px);
-  box-shadow: 0 12px 32px -8px rgba(20,26,16,.14);
+  box-shadow: 0 20px 46px -22px rgba(20,17,15,.3);
 }
