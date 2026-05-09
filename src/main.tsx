@@ -14,6 +14,7 @@ import {
   LogOut,
   MapPin,
   Menu,
+  MessageCircle,
   Minus,
   Package,
   Plus,
@@ -23,9 +24,11 @@ import {
   ShieldCheck,
   ShoppingBag,
   Sparkles,
+  Star,
   Tags,
   TicketPercent,
   Trash2,
+  UploadCloud,
   UserRound,
   UsersRound,
   X,
@@ -145,6 +148,19 @@ function positiveNumber(value: string | number) {
 
 function normalizeText(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+
+function readImageAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith("image/")) {
+      reject(new Error("Arquivo inválido"));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("Não foi possível ler a imagem"));
+    reader.readAsDataURL(file);
+  });
 }
 
 function nextOrderNumber(orders: Order[], companyId: string) {
@@ -437,17 +453,35 @@ function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: Dat
     <main className="min-h-screen bg-startt-paper">
       <AppHeader company={company} />
       {!checkoutOnly && (
-        <section className="relative isolate flex min-h-[520px] items-end overflow-hidden px-4 py-10 md:px-10">
+        <section className="relative isolate flex min-h-[560px] items-end overflow-hidden px-4 pb-24 pt-10 md:px-10 md:pb-14">
           <img className="absolute inset-0 -z-20 h-full w-full object-cover" src={company.banner_url || company.hero_image} alt={company.name} onError={(event) => { event.currentTarget.src = company.hero_image || "https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?auto=format&fit=crop&w=1400&q=80"; }} />
-          <div className="absolute inset-0 -z-10 bg-gradient-to-r from-black/85 via-black/45 to-black/10" />
-          <div className="mx-auto w-[min(1280px,100%)] pb-4 text-white">
-            <span className="inline-flex items-center gap-2 text-sm font-black uppercase text-startt-yellow"><Sparkles size={16} /> Cardápio público</span>
-            <h1 className="mt-3 max-w-4xl text-5xl font-black leading-none md:text-8xl">{company.name}</h1>
-            <p className="mt-4 max-w-2xl text-lg leading-8 text-white/90">{company.opening_hours} • {company.estimated_delivery_time}</p>
-            <label className="mt-7 flex h-14 w-[min(620px,100%)] items-center gap-3 rounded-lg bg-white px-4 text-startt-muted shadow-2xl">
-              <Search size={19} />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} className="w-full border-0 bg-transparent text-startt-ink outline-none" placeholder="Buscar produtos" />
-            </label>
+          <div className="absolute inset-0 -z-10 bg-gradient-to-r from-black/90 via-black/55 to-black/20" />
+          <div className="absolute inset-x-0 bottom-0 -z-10 h-36 bg-gradient-to-t from-startt-paper to-transparent" />
+          <div className="mx-auto grid w-[min(1280px,100%)] gap-7 pb-2 text-white lg:grid-cols-[1fr_360px] lg:items-end">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full bg-white/14 px-3 py-1 text-sm font-black uppercase backdrop-blur"><Sparkles size={16} /> Cardápio público</div>
+              <div className="mt-4 flex flex-wrap items-end gap-4">
+                {company.logo_url ? <img className="h-20 w-20 rounded-2xl border border-white/30 object-cover shadow-2xl" src={company.logo_url} alt={company.name} onError={(event) => { event.currentTarget.style.display = "none"; }} /> : <span className="grid h-20 w-20 place-items-center rounded-2xl border border-white/25 bg-white/15 text-4xl font-black backdrop-blur">S</span>}
+                <div>
+                  <h1 className="max-w-4xl text-5xl font-black leading-none md:text-7xl">{company.name}</h1>
+                  <div className="mt-3 flex flex-wrap gap-2 text-sm font-bold text-white/90">
+                    <span className="rounded-full bg-white/14 px-3 py-1">{company.opening_hours}</span>
+                    <span className="rounded-full bg-white/14 px-3 py-1">{company.estimated_delivery_time}</span>
+                    <span className="rounded-full bg-white/14 px-3 py-1">Pedido min. {money(company.minimum_order)}</span>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-white/14 px-3 py-1"><Star size={14} fill="currentColor" /> 4,8</span>
+                  </div>
+                </div>
+              </div>
+              <label className="mt-7 flex h-14 w-[min(680px,100%)] items-center gap-3 rounded-2xl bg-white px-4 text-startt-muted shadow-2xl">
+                <Search size={19} />
+                <input value={query} onChange={(event) => setQuery(event.target.value)} className="w-full border-0 bg-transparent text-startt-ink outline-none" placeholder="Buscar produtos, combos e bebidas" />
+              </label>
+            </div>
+            <div className="hidden rounded-2xl border border-white/20 bg-white/12 p-5 shadow-2xl backdrop-blur-xl lg:grid">
+              <span className="text-sm font-bold text-white/75">Entrega via WhatsApp</span>
+              <strong className="mt-1 text-2xl">Pedido enviado direto para a loja</strong>
+              <a href={`https://wa.me/${company.whatsapp}`} target="_blank" className="mt-5 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-white px-4 font-black text-startt-ink"><MessageCircle size={18} /> Falar no WhatsApp</a>
+            </div>
           </div>
         </section>
       )}
@@ -455,7 +489,7 @@ function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: Dat
         <aside className="grid gap-4 self-start lg:sticky lg:top-24">
           <StatusCard company={company} />
           <Panel title="Categorias">
-            <div className="grid gap-2">
+            <div className="flex gap-2 overflow-x-auto pb-1 lg:grid lg:overflow-visible">
               <FilterButton active={categoryId === "all"} onClick={() => setCategoryId("all")}>Todos</FilterButton>
               {categories.map((category) => <FilterButton key={category.id} active={categoryId === category.id} onClick={() => setCategoryId(category.id)}>{category.name}</FilterButton>)}
             </div>
@@ -484,6 +518,12 @@ function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: Dat
         </section>
       </section>
       <CartDrawer cartOpen={cartOpen} setCartOpen={setCartOpen} cart={cart} setCart={setCart} company={company} zones={activeZones} zoneId={zoneId} setZoneId={setZoneId} checkout={checkout} setCheckout={setCheckout} fulfillment={fulfillment} setFulfillment={setFulfillment} subtotal={subtotal} discount={discount} deliveryFee={deliveryFee} total={total} finishOrder={finishOrder} />
+      {itemCount > 0 && !cartOpen && (
+        <button onClick={() => setCartOpen(true)} className="mobile-safe-bottom fixed inset-x-4 bottom-3 z-40 flex min-h-14 items-center justify-between rounded-2xl bg-startt-green px-4 font-black text-white shadow-2xl md:hidden">
+          <span className="inline-flex items-center gap-2"><ShoppingBag size={18} /> Ver pedido</span>
+          <span>{itemCount} item(ns) • {money(total)}</span>
+        </button>
+      )}
       {selectedProduct && <ProductModal product={selectedProduct} category={categories.find((item) => item.id === selectedProduct.category_id)?.name || ""} onClose={() => setSelectedProduct(null)} onAdd={() => { add(selectedProduct); setSelectedProduct(null); }} />}
       {companyInfoOpen && <CompanyInfoModal company={company} onClose={() => setCompanyInfoOpen(false)} />}
       <Footer />
@@ -531,59 +571,68 @@ function CartDrawer({ cartOpen, setCartOpen, cart, setCart, company, zones, zone
   }
   return (
     <div className={`fixed inset-0 z-50 ${cartOpen ? "pointer-events-auto" : "pointer-events-none"}`}>
-      <button className={`absolute inset-0 border-0 bg-black/40 transition-opacity ${cartOpen ? "opacity-100" : "opacity-0"}`} onClick={() => setCartOpen(false)} aria-label="Fechar carrinho" />
-      <aside className={`absolute right-0 top-0 grid h-full w-[min(460px,100%)] grid-rows-[auto_1fr_auto] bg-white shadow-2xl transition-transform ${cartOpen ? "translate-x-0" : "translate-x-full"}`}>
-        <div className="flex items-center justify-between border-b border-black/10 p-5">
-          <div><span className="text-sm font-bold text-startt-muted">Seu pedido</span><h2 className="text-2xl font-black">Checkout</h2></div>
-          <button className="grid h-10 w-10 place-items-center rounded-lg bg-startt-soft" onClick={() => setCartOpen(false)} aria-label="Fechar"><X size={20} /></button>
+      <button className={`absolute inset-0 border-0 bg-black/45 backdrop-blur-[2px] transition-opacity ${cartOpen ? "opacity-100" : "opacity-0"}`} onClick={() => setCartOpen(false)} aria-label="Fechar carrinho" />
+      <aside className={`absolute bottom-0 right-0 grid h-[96dvh] w-full grid-rows-[auto_1fr_auto] rounded-t-3xl bg-white shadow-drawer transition-transform duration-300 ease-spring sm:right-3 sm:top-3 sm:h-[calc(100dvh-24px)] sm:w-[min(560px,calc(100%-24px))] sm:rounded-3xl ${cartOpen ? "translate-y-0 sm:translate-x-0" : "translate-y-full sm:translate-x-[calc(100%+24px)] sm:translate-y-0"}`}>
+        <div className="flex items-center justify-between border-b border-black/10 px-5 py-4">
+          <div><span className="text-sm font-bold text-startt-muted">Seu pedido</span><h2 className="text-2xl font-black leading-tight">Checkout</h2></div>
+          <button className="grid h-10 w-10 place-items-center rounded-xl bg-startt-soft" onClick={() => setCartOpen(false)} aria-label="Fechar"><X size={20} /></button>
         </div>
-        <div className="overflow-auto p-5">
-          {cart.length === 0 ? <Empty text="Seu pedido ainda está vazio." /> : cart.map((item) => (
-            <div key={item.id} className="grid grid-cols-[76px_1fr] gap-3 border-b border-black/10 py-3">
-              <img className="h-20 w-full rounded-lg object-cover" src={item.image} alt="" />
-              <div><strong className="block">{item.name}</strong><span className="text-sm text-startt-muted">{money(item.price)}</span>
-                <div className="mt-2 inline-flex items-center gap-3">
-                  <button className="grid h-8 w-8 place-items-center rounded-lg bg-startt-green text-white" onClick={() => qty(item.id, -1)}>{item.qty === 1 ? <Trash2 size={15} /> : <Minus size={15} />}</button>
-                  <b>{item.qty}</b>
-                  <button className="grid h-8 w-8 place-items-center rounded-lg bg-startt-green text-white" onClick={() => qty(item.id, 1)}><Plus size={15} /></button>
+        <div className="overflow-auto p-4">
+          <div className="grid gap-4">
+            <section className="grid gap-2">
+              {cart.length === 0 ? <Empty text="Seu pedido ainda está vazio." /> : cart.map((item) => (
+                <div key={item.id} className="grid grid-cols-[64px_1fr_auto] items-center gap-3 rounded-2xl border border-black/10 bg-white p-3 shadow-sm">
+                  <img className="h-16 w-16 rounded-xl object-cover" src={item.image} alt="" />
+                  <div className="min-w-0"><strong className="block truncate">{item.name}</strong><span className="text-sm text-startt-muted">{money(item.price)}</span></div>
+                  <div className="inline-flex items-center gap-2">
+                    <button className="grid h-8 w-8 place-items-center rounded-lg bg-startt-soft text-startt-ink" onClick={() => qty(item.id, -1)}>{item.qty === 1 ? <Trash2 size={15} /> : <Minus size={15} />}</button>
+                    <b className="w-5 text-center">{item.qty}</b>
+                    <button className="grid h-8 w-8 place-items-center rounded-lg bg-startt-green text-white" onClick={() => qty(item.id, 1)}><Plus size={15} /></button>
+                  </div>
                 </div>
+              ))}
+            </section>
+            <section className="grid gap-3 rounded-2xl bg-startt-paper p-3">
+              <div className="grid grid-cols-2 gap-2">
+                <Toggle active={fulfillment === "delivery"} disabled={!company.delivery_enabled} onClick={() => setFulfillment("delivery")}>Entrega</Toggle>
+                <Toggle active={fulfillment === "pickup"} disabled={!company.pickup_enabled} onClick={() => setFulfillment("pickup")}>Retirada</Toggle>
               </div>
-            </div>
-          ))}
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Input placeholder="Nome" value={checkout.name} onChange={(value) => setCheckout({ ...checkout, name: value })} />
+                <Input placeholder="Telefone" value={checkout.phone} onChange={(value) => setCheckout({ ...checkout, phone: value })} />
+              </div>
+              {fulfillment === "delivery" && <>
+                <div className="grid gap-2 sm:grid-cols-[130px_1fr]">
+                  <div className="grid gap-2">
+                    <Input placeholder="CEP" value={checkout.cep} onChange={lookupCep} />
+                    {cepLoading && <span className="text-xs font-bold text-startt-green">Buscando CEP...</span>}
+                  </div>
+                  <Input placeholder="Rua" value={checkout.address} onChange={(value) => setCheckout({ ...checkout, address: value })} />
+                </div>
+                {cepMessage && <span className="text-xs font-bold text-startt-muted">{cepMessage}</span>}
+                <div className="grid grid-cols-2 gap-2">
+                  <Input placeholder="Número" value={checkout.number} onChange={(value) => setCheckout({ ...checkout, number: value })} />
+                  <Input placeholder="Complemento" value={checkout.complement} onChange={(value) => setCheckout({ ...checkout, complement: value })} />
+                </div>
+                <div className="grid grid-cols-[1fr_1fr_70px] gap-2">
+                  <Input placeholder="Bairro" value={checkout.neighborhood} onChange={(value) => setCheckout({ ...checkout, neighborhood: value })} />
+                  <Input placeholder="Cidade" value={checkout.city} onChange={(value) => setCheckout({ ...checkout, city: value })} />
+                  <Input placeholder="UF" value={checkout.state} onChange={(value) => setCheckout({ ...checkout, state: value.toUpperCase() })} />
+                </div>
+                <Select value={zoneId} onChange={(value) => { setZoneId(value); const manualZone = zones.find((zone) => zone.id === value); if (manualZone) setCheckout({ ...checkout, neighborhood: manualZone.neighborhood }); }}><option value="">Selecione o bairro</option>{zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.neighborhood} - {money(zone.fee)} - {zone.estimated_minutes} min</option>)}</Select>
+                {selectedZone && <span className="rounded-xl bg-white p-3 text-sm font-black text-startt-green">Frete para {selectedZone.neighborhood}: {money(selectedZone.fee)}</span>}
+              </>}
+              <div className="grid grid-cols-2 gap-2">
+                <Select value={checkout.payment_method} onChange={(value) => setCheckout({ ...checkout, payment_method: value as PaymentMethod })}><option>Pix</option><option>Cartão</option><option>Dinheiro</option></Select>
+                <Input placeholder="Cupom" value={checkout.coupon} onChange={(value) => setCheckout({ ...checkout, coupon: value })} />
+              </div>
+              {checkout.payment_method === "Dinheiro" && <div className="grid gap-2 rounded-xl border border-black/10 bg-white p-3"><Input type="number" placeholder="Troco para quanto?" value={checkout.cash_change_for} onChange={(value) => setCheckout({ ...checkout, cash_change_for: value })} />{cashChangeFor > 0 && <span className="text-sm font-bold text-startt-muted">Troco para {money(cashChangeFor)} • Troco: {money(calculatedChange)}</span>}</div>}
+            </section>
+          </div>
         </div>
-        <div className="grid gap-3 border-t border-black/10 bg-startt-paper p-5">
-          <div className="grid grid-cols-2 gap-2">
-            <Toggle active={fulfillment === "delivery"} disabled={!company.delivery_enabled} onClick={() => setFulfillment("delivery")}>Entrega</Toggle>
-            <Toggle active={fulfillment === "pickup"} disabled={!company.pickup_enabled} onClick={() => setFulfillment("pickup")}>Retirada</Toggle>
-          </div>
-          <Input placeholder="Nome" value={checkout.name} onChange={(value) => setCheckout({ ...checkout, name: value })} />
-          <Input placeholder="Telefone" value={checkout.phone} onChange={(value) => setCheckout({ ...checkout, phone: value })} />
-          {fulfillment === "delivery" && <>
-            <div className="grid gap-2">
-              <Input placeholder="CEP" value={checkout.cep} onChange={lookupCep} />
-              {cepLoading && <span className="text-xs font-bold text-startt-green">Buscando CEP...</span>}
-              {cepMessage && <span className="text-xs font-bold text-startt-muted">{cepMessage}</span>}
-            </div>
-            <Input placeholder="Rua" value={checkout.address} onChange={(value) => setCheckout({ ...checkout, address: value })} />
-            <div className="grid grid-cols-2 gap-2">
-              <Input placeholder="Número" value={checkout.number} onChange={(value) => setCheckout({ ...checkout, number: value })} />
-              <Input placeholder="Complemento" value={checkout.complement} onChange={(value) => setCheckout({ ...checkout, complement: value })} />
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <Input placeholder="Bairro" value={checkout.neighborhood} onChange={(value) => setCheckout({ ...checkout, neighborhood: value })} />
-              <Input placeholder="Cidade" value={checkout.city} onChange={(value) => setCheckout({ ...checkout, city: value })} />
-              <Input placeholder="UF" value={checkout.state} onChange={(value) => setCheckout({ ...checkout, state: value.toUpperCase() })} />
-            </div>
-            <Select value={zoneId} onChange={(value) => { setZoneId(value); const manualZone = zones.find((zone) => zone.id === value); if (manualZone) setCheckout({ ...checkout, neighborhood: manualZone.neighborhood }); }}><option value="">Selecione o bairro</option>{zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.neighborhood} - {money(zone.fee)} - {zone.estimated_minutes} min</option>)}</Select>
-            {selectedZone && <span className="rounded-lg bg-startt-soft p-3 text-sm font-black text-startt-green">Frete para {selectedZone.neighborhood}: {money(selectedZone.fee)}</span>}
-          </>}
-          <div className="grid grid-cols-2 gap-2">
-            <Select value={checkout.payment_method} onChange={(value) => setCheckout({ ...checkout, payment_method: value as PaymentMethod })}><option>Pix</option><option>Cartão</option><option>Dinheiro</option></Select>
-            <Input placeholder="Cupom" value={checkout.coupon} onChange={(value) => setCheckout({ ...checkout, coupon: value })} />
-          </div>
-          {checkout.payment_method === "Dinheiro" && <div className="grid gap-2 rounded-lg border border-black/10 bg-white p-3"><Input type="number" placeholder="Troco para quanto?" value={checkout.cash_change_for} onChange={(value) => setCheckout({ ...checkout, cash_change_for: value })} />{cashChangeFor > 0 && <span className="text-sm font-bold text-startt-muted">Troco para {money(cashChangeFor)} • Troco: {money(calculatedChange)}</span>}</div>}
+        <div className="mobile-safe-bottom grid gap-3 border-t border-black/10 bg-white p-4 shadow-[0_-14px_36px_-28px_rgba(20,26,16,.7)]">
           <Totals subtotal={subtotal} discount={discount} deliveryFee={deliveryFee} total={total} />
-          <button className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-startt-green px-4 font-black text-white" onClick={finishOrder}><Check size={18} /> Finalizar no WhatsApp</button>
+          <button className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-startt-green px-4 font-black text-white shadow-lg shadow-startt-green/20" onClick={finishOrder}><Check size={18} /> Finalizar no WhatsApp</button>
         </div>
       </aside>
     </div>
@@ -682,19 +731,19 @@ function CompanyAdmin({ db, setDbState, company, screen, login }: { db: Database
 
   return (
     <main className="min-h-screen bg-startt-paper">
-      <header className="sticky top-0 z-30 border-b border-black/10 bg-startt-paper/95 px-4 py-3 backdrop-blur-xl">
+      <header className="sticky top-0 z-30 border-b border-black/10 bg-white/86 px-4 py-3 backdrop-blur-xl">
         <div className="mx-auto flex w-[min(1280px,100%)] flex-wrap items-center justify-between gap-3">
           <LogoTitle title="Startt Delivery" subtitle={`${company.name} • ${user.name} (${user.role})`} />
           <div className="flex flex-wrap items-center gap-2">
             {newOrderBadge > 0 && <a href={`/${company.slug}/admin/pedidos`} onClick={() => setNewOrderBadge(0)} className={`rounded-lg px-4 py-3 font-black text-white ${newOrderFlash ? "bg-startt-red shadow-xl" : "bg-startt-green"}`}>{newOrderBadge} novo(s) pedido(s)</a>}
-            <a className="rounded-lg border border-black/10 bg-white px-4 py-3 font-extrabold" href={`/${company.slug}`}>Ver cardápio</a>
+            <a className="rounded-xl border border-black/10 bg-white px-4 py-3 font-extrabold shadow-sm" href={`/${company.slug}`}>Ver cardápio</a>
           </div>
         </div>
       </header>
       <section className="mx-auto grid w-[min(1280px,calc(100%-32px))] gap-6 py-6 lg:grid-cols-[260px_1fr]">
-        <aside className="grid gap-2 self-start rounded-lg border border-black/10 bg-white p-3 lg:sticky lg:top-24">
-          {adminNav.filter((item) => allowed.includes(item.id)).map((item) => <a key={item.id} href={`/${company.slug}/admin/${item.id}`} className={`flex min-h-11 items-center gap-3 rounded-lg px-3 font-extrabold ${activeScreen === item.id ? "bg-startt-green text-white" : "bg-startt-soft text-startt-ink"}`}>{item.icon}{item.label}</a>)}
-          <button onClick={logout} className="flex min-h-11 items-center gap-3 rounded-lg bg-startt-soft px-3 font-extrabold"><LogOut size={18} /> Sair</button>
+        <aside className="grid gap-1 self-start rounded-2xl border border-black/10 bg-white/90 p-3 shadow-card backdrop-blur lg:sticky lg:top-24">
+          {adminNav.filter((item) => allowed.includes(item.id)).map((item) => <a key={item.id} href={`/${company.slug}/admin/${item.id}`} className={`flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-extrabold transition hover:bg-startt-soft ${activeScreen === item.id ? "bg-startt-green text-white shadow-lg shadow-startt-green/20 hover:bg-startt-green" : "text-startt-ink"}`}>{item.icon}{item.label}</a>)}
+          <button onClick={logout} className="mt-2 flex min-h-11 items-center gap-3 rounded-xl bg-startt-soft px-3 text-sm font-extrabold"><LogOut size={18} /> Sair</button>
         </aside>
         <AdminContent screen={activeScreen} db={db} setDbState={setDbState} company={company} user={user} />
       </section>
@@ -847,6 +896,7 @@ function sendOrderUpdate(order: Order, customer: string, company: Company) {
 function ProductsManager({ company, products, categories, plan, setDbState }: { company: Company; products: Product[]; categories: Category[]; plan?: Plan; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
   const blank = { id: "", name: "", description: "", ingredients: "", price: "", category_id: categories[0]?.id || "", image: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=900&q=80", preparation_time: "10", badge: "", featured: false, active: true };
   const [form, setForm] = useState(blank);
+  const [formOpen, setFormOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   function save(event: React.FormEvent) {
     event.preventDefault();
@@ -868,21 +918,33 @@ function ProductsManager({ company, products, categories, plan, setDbState }: { 
     runSave(setSaving, () => {
       setDbState((current) => ({ ...current, products: form.id ? current.products.map((item) => item.id === form.id && item.company_id === company.id ? product : item) : [product, ...current.products] }));
       setForm(blank);
+      setFormOpen(false);
     }, editing ? "Produto atualizado com sucesso." : "Produto criado com sucesso.");
   }
-  function edit(product: Product) { setForm({ id: product.id, name: product.name, description: product.description, ingredients: product.ingredients || "", price: String(product.price), category_id: product.category_id, image: product.image, preparation_time: String(product.preparation_time), badge: product.badge || "", featured: product.featured, active: product.active }); }
+  function create() { setForm({ ...blank, category_id: categories[0]?.id || "" }); setFormOpen(true); }
+  function edit(product: Product) { setForm({ id: product.id, name: product.name, description: product.description, ingredients: product.ingredients || "", price: String(product.price), category_id: product.category_id, image: product.image, preparation_time: String(product.preparation_time), badge: product.badge || "", featured: product.featured, active: product.active }); setFormOpen(true); }
   function remove(product: Product) { if (confirm(`Excluir ${product.name}?`)) { setDbState((current) => ({ ...current, products: current.products.filter((item) => !(item.id === product.id && item.company_id === company.id)) })); notify("success", "Produto excluído com sucesso."); } }
   return (
     <CrudShell title="Produtos" description="Cadastrar, editar, excluir e ativar/desativar produtos.">
-      <form onSubmit={save} className="grid gap-3 rounded-lg border border-black/10 bg-white p-4">
-        <div className="grid gap-3 md:grid-cols-3"><Input placeholder="Nome" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><Input placeholder="Preço" value={form.price} onChange={(value) => setForm({ ...form, price: value })} /><Select value={form.category_id} onChange={(value) => setForm({ ...form, category_id: value })}>{categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</Select></div>
-        <Input placeholder="Imagem por URL" value={form.image} onChange={(value) => setForm({ ...form, image: value })} />
-        <div className="grid gap-3 md:grid-cols-3"><Input placeholder="Tempo de preparo" value={form.preparation_time} onChange={(value) => setForm({ ...form, preparation_time: value })} /><Input placeholder="Destaque/selo" value={form.badge} onChange={(value) => setForm({ ...form, badge: value })} /><label className="flex items-center gap-2 font-bold"><input type="checkbox" checked={form.featured} onChange={(event) => setForm({ ...form, featured: event.target.checked })} /> Destaque</label></div>
-        <textarea className="min-h-24 rounded-lg border border-black/10 px-3 py-3 outline-startt-green" placeholder="Descrição" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
-        <textarea className="min-h-20 rounded-lg border border-black/10 px-3 py-3 outline-startt-green" placeholder="Ingredientes" value={form.ingredients} onChange={(event) => setForm({ ...form, ingredients: event.target.value })} />
-        <label className="flex items-center gap-2 font-bold"><input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} /> Ativo</label>
-        <button disabled={saving} className="w-fit rounded-lg bg-startt-green px-4 py-3 font-black text-white disabled:opacity-60">{saving ? "Salvando..." : form.id ? "Salvar alterações" : "Criar produto"}</button>
-      </form>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-black/10 bg-white p-4 shadow-card">
+        <div><strong>{products.length} produtos cadastrados</strong><p className="text-sm text-startt-muted">Limite do plano: {plan?.max_products || "sem limite visível"}</p></div>
+        <button onClick={create} className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-startt-green px-4 font-black text-white shadow-lg shadow-startt-green/20"><Plus size={18} /> Novo produto</button>
+      </div>
+      <FormDrawer open={formOpen} title={form.id ? "Editar produto" : "Novo produto"} description="Organize dados comerciais, foto, selo e disponibilidade do item." onClose={() => setFormOpen(false)}>
+        <form onSubmit={save} className="grid gap-4">
+          <ImageUpload label="Foto do produto" value={form.image} onChange={(value) => setForm({ ...form, image: value })} />
+          <div className="grid gap-3 sm:grid-cols-2"><Input placeholder="Nome" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><Input placeholder="Preço" value={form.price} onChange={(value) => setForm({ ...form, price: value })} /></div>
+          <Select value={form.category_id} onChange={(value) => setForm({ ...form, category_id: value })}>{categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</Select>
+          <div className="grid gap-3 sm:grid-cols-2"><Input placeholder="Tempo de preparo" value={form.preparation_time} onChange={(value) => setForm({ ...form, preparation_time: value })} /><Input placeholder="Destaque/selo" value={form.badge} onChange={(value) => setForm({ ...form, badge: value })} /></div>
+          <textarea className="min-h-28 rounded-xl border border-startt-border px-3 py-3 text-sm shadow-sm outline-startt-green focus:border-startt-green focus:shadow-input" placeholder="Descrição" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
+          <textarea className="min-h-24 rounded-xl border border-startt-border px-3 py-3 text-sm shadow-sm outline-startt-green focus:border-startt-green focus:shadow-input" placeholder="Ingredientes" value={form.ingredients} onChange={(event) => setForm({ ...form, ingredients: event.target.value })} />
+          <div className="grid gap-2 rounded-2xl bg-startt-paper p-4">
+            <label className="flex items-center gap-2 font-bold"><input type="checkbox" checked={form.featured} onChange={(event) => setForm({ ...form, featured: event.target.checked })} /> Produto em destaque</label>
+            <label className="flex items-center gap-2 font-bold"><input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} /> Ativo no cardápio</label>
+          </div>
+          <button disabled={saving} className="min-h-12 rounded-xl bg-startt-green px-4 font-black text-white shadow-lg shadow-startt-green/20 disabled:opacity-60">{saving ? "Salvando..." : form.id ? "Salvar alterações" : "Criar produto"}</button>
+        </form>
+      </FormDrawer>
       <Table headers={["Produto", "Categoria", "Preço", "Status", "Ações"]} rows={products.map((product) => [product.name, categoryName(product.category_id, categories), money(product.price), product.active ? "Ativo" : "Inativo", <Actions key={product.id} onEdit={() => edit(product)} onDelete={() => remove(product)} />])} />
     </CrudShell>
   );
@@ -942,7 +1004,32 @@ function CompanySettings({ company, setDbState }: { company: Company; setDbState
   const [form, setForm] = useState(company);
   const [saving, setSaving] = useState(false);
   function save() { if (saving) return; runSave(setSaving, () => setDbState((current) => ({ ...current, companies: current.companies.map((item) => item.id === company.id ? { ...form, hero_image: form.banner_url || form.hero_image } : item) })), "Configurações salvas com sucesso."); }
-  return <CrudShell title="Configurações" description="Essas configs alteram o cardápio público da empresa."><div className="grid gap-3 rounded-lg border border-black/10 bg-white p-4 md:grid-cols-2"><Input placeholder="Nome da empresa" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><Input placeholder="Logo URL" value={form.logo_url} onChange={(value) => setForm({ ...form, logo_url: value })} /><Input placeholder="Banner URL" value={form.banner_url || form.hero_image} onChange={(value) => setForm({ ...form, banner_url: value, hero_image: value })} /><Input placeholder="WhatsApp" value={form.whatsapp} onChange={(value) => setForm({ ...form, whatsapp: value })} /><Input placeholder="Endereço" value={form.address} onChange={(value) => setForm({ ...form, address: value })} /><Input placeholder="Pedido mínimo" value={String(form.minimum_order)} onChange={(value) => setForm({ ...form, minimum_order: Number(value) || 0 })} /><Input placeholder="Tempo estimado" value={form.estimated_delivery_time} onChange={(value) => setForm({ ...form, estimated_delivery_time: value })} /><Input placeholder="Cor principal" value={form.primary_color} onChange={(value) => setForm({ ...form, primary_color: value })} /><Input placeholder="Horário de funcionamento" value={form.opening_hours} onChange={(value) => setForm({ ...form, opening_hours: value })} /><label className="flex gap-2 font-bold"><input type="checkbox" checked={form.is_open} onChange={(e) => setForm({ ...form, is_open: e.target.checked })} /> Aberto</label><label className="flex gap-2 font-bold"><input type="checkbox" checked={form.delivery_enabled} onChange={(e) => setForm({ ...form, delivery_enabled: e.target.checked })} /> Permitir entrega</label><label className="flex gap-2 font-bold"><input type="checkbox" checked={form.pickup_enabled} onChange={(e) => setForm({ ...form, pickup_enabled: e.target.checked })} /> Permitir retirada</label><Input placeholder="Mensagem de rodapé" value={form.footer_message} onChange={(value) => setForm({ ...form, footer_message: value })} /><button disabled={saving} onClick={save} className="w-fit rounded-lg bg-startt-green px-4 py-3 font-black text-white disabled:opacity-60">{saving ? "Salvando..." : "Salvar configurações"}</button></div></CrudShell>;
+  return (
+    <CrudShell title="Configurações" description="Essas configs alteram o cardápio público da empresa.">
+      <div className="grid gap-5 rounded-2xl border border-black/10 bg-white p-4 shadow-card">
+        <div className="grid gap-4 lg:grid-cols-2">
+          <ImageUpload label="Logo da loja" value={form.logo_url} onChange={(value) => setForm({ ...form, logo_url: value })} />
+          <ImageUpload label="Banner do cardápio" value={form.banner_url || form.hero_image} onChange={(value) => setForm({ ...form, banner_url: value, hero_image: value })} />
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <Input placeholder="Nome da empresa" value={form.name} onChange={(value) => setForm({ ...form, name: value })} />
+          <Input placeholder="WhatsApp" value={form.whatsapp} onChange={(value) => setForm({ ...form, whatsapp: value })} />
+          <Input placeholder="Endereço" value={form.address} onChange={(value) => setForm({ ...form, address: value })} />
+          <Input placeholder="Pedido mínimo" value={String(form.minimum_order)} onChange={(value) => setForm({ ...form, minimum_order: Number(value) || 0 })} />
+          <Input placeholder="Tempo estimado" value={form.estimated_delivery_time} onChange={(value) => setForm({ ...form, estimated_delivery_time: value })} />
+          <Input placeholder="Cor principal" value={form.primary_color} onChange={(value) => setForm({ ...form, primary_color: value })} />
+          <Input placeholder="Horário de funcionamento" value={form.opening_hours} onChange={(value) => setForm({ ...form, opening_hours: value })} />
+          <Input placeholder="Mensagem de rodapé" value={form.footer_message} onChange={(value) => setForm({ ...form, footer_message: value })} />
+        </div>
+        <div className="flex flex-wrap gap-4 rounded-2xl bg-startt-paper p-4">
+          <label className="flex gap-2 font-bold"><input type="checkbox" checked={form.is_open} onChange={(e) => setForm({ ...form, is_open: e.target.checked })} /> Aberto</label>
+          <label className="flex gap-2 font-bold"><input type="checkbox" checked={form.delivery_enabled} onChange={(e) => setForm({ ...form, delivery_enabled: e.target.checked })} /> Permitir entrega</label>
+          <label className="flex gap-2 font-bold"><input type="checkbox" checked={form.pickup_enabled} onChange={(e) => setForm({ ...form, pickup_enabled: e.target.checked })} /> Permitir retirada</label>
+        </div>
+        <button disabled={saving} onClick={save} className="w-fit rounded-xl bg-startt-green px-4 py-3 font-black text-white shadow-lg shadow-startt-green/20 disabled:opacity-60">{saving ? "Salvando..." : "Salvar configurações"}</button>
+      </div>
+    </CrudShell>
+  );
 }
 
 function UsersManager({ company, users, plan, setDbState }: { company: Company; users: User[]; plan?: Plan; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
@@ -1006,7 +1093,7 @@ function MasterCompanies({ db, setDbState }: { db: DatabaseApi; setDbState: Reac
   }
   function updateCompany(companyId: string, patch: Partial<Company>) { setDbState((current) => ({ ...current, companies: current.companies.map((company) => company.id === companyId ? { ...company, ...patch } : company) })); notify("success", "Empresa atualizada."); }
   function deleteCompany(company: Company) { if (!confirm(`Excluir ${company.name} e TODOS os dados vinculados?`)) return; setDbState((current) => ({ ...current, companies: current.companies.filter((item) => item.id !== company.id), users: current.users.filter((item) => item.company_id !== company.id), categories: current.categories.filter((item) => item.company_id !== company.id), products: current.products.filter((item) => item.company_id !== company.id), orders: current.orders.filter((item) => item.company_id !== company.id), order_items: current.order_items.filter((item) => item.company_id !== company.id), customers: current.customers.filter((item) => item.company_id !== company.id), delivery_zones: current.delivery_zones.filter((item) => item.company_id !== company.id), coupons: current.coupons.filter((item) => item.company_id !== company.id), settings: current.settings.filter((item) => item.company_id !== company.id), cash_sales: current.cash_sales.filter((item) => item.company_id !== company.id), print_settings: current.print_settings.filter((item) => item.company_id !== company.id), reports: current.reports.filter((item) => item.company_id !== company.id) })); notify("success", "Empresa e dados vinculados foram excluídos."); }
-  return <CrudShell title="Empresas" description="CRUD completo, controle de acesso e financeiro por empresa."><div className="flex flex-wrap gap-2"><button onClick={startCreate} className="rounded-lg bg-startt-green px-4 py-3 font-black text-white">Nova empresa</button></div>{formOpen && <form onSubmit={saveCompany} className="grid gap-3 rounded-lg border bg-white p-4"><div className="grid gap-3 md:grid-cols-4"><Input placeholder="Nome" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><Input placeholder="Slug" value={form.slug} onChange={(value) => setForm({ ...form, slug: value })} /><Input placeholder="WhatsApp" value={form.whatsapp} onChange={(value) => setForm({ ...form, whatsapp: value })} /><Input placeholder="Endereço" value={form.address} onChange={(value) => setForm({ ...form, address: value })} /><Select value={form.status} onChange={(value) => setForm({ ...form, status: value as CompanyStatus })}><option>trial</option><option>active</option><option>blocked</option><option>canceled</option></Select><Select value={form.plan_id} onChange={(value) => { const plan = selectedPlan(value); setForm({ ...form, plan_id: value, monthly_price: String(plan?.monthly_price || form.monthly_price) }); }}>{db.plans.filter((plan) => plan.is_active || plan.id === form.plan_id).map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</Select><Input placeholder="Cor principal" value={form.primary_color} onChange={(value) => setForm({ ...form, primary_color: value })} /><Input placeholder="Valor mensal" value={form.monthly_price} onChange={(value) => setForm({ ...form, monthly_price: value })} /><Input placeholder="Dia vencimento" value={form.due_day} onChange={(value) => setForm({ ...form, due_day: value })} /><Input type="date" placeholder="Próxima data" value={form.next_due_date} onChange={(value) => setForm({ ...form, next_due_date: value })} /><Select value={form.subscription_status} onChange={(value) => setForm({ ...form, subscription_status: value as SubscriptionStatus })}><option>trialing</option><option>active</option><option>overdue</option><option>canceled</option></Select><Input placeholder="Admin inicial opcional" value={form.admin_email} onChange={(value) => setForm({ ...form, admin_email: value })} /></div><Input placeholder="Observações financeiras" value={form.payment_notes} onChange={(value) => setForm({ ...form, payment_notes: value })} /><label className="flex items-center gap-2 font-bold"><input type="checkbox" checked={form.is_registration_enabled} onChange={(event) => setForm({ ...form, is_registration_enabled: event.target.checked })} /> Cadastro/acesso habilitado</label><div className="flex gap-2"><button className="rounded-lg bg-startt-green px-4 py-3 font-black text-white">{form.id ? "Salvar alterações" : "Criar empresa"}</button><button type="button" onClick={() => setFormOpen(false)} className="rounded-lg border px-4 py-3 font-black">Cancelar</button></div></form>}<Table headers={["Empresa", "Slug", "Plano", "Assinatura", "Mensal", "Vencimento", "Ações"]} rows={db.companies.map((company) => [company.name, `/${company.slug}`, db.plans.find((plan) => plan.id === company.plan_id)?.name || company.plan, company.subscription_status, money(company.monthly_price), `${company.due_day} • ${company.next_due_date}`, <div key={company.id} className="flex flex-wrap gap-2"><button className="rounded-lg border px-3 py-2 font-bold" onClick={() => startEdit(company)}>Editar</button><button className="rounded-lg border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { status: company.status === "blocked" ? "active" : "blocked" })}>{company.status === "blocked" ? "Desbloquear" : "Bloquear"}</button><button className="rounded-lg border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { subscription_status: "active", status: company.status === "blocked" ? "active" : company.status, last_payment_date: todayInput(), payment_notes: "Marcado como pago pelo Master." })}>Marcar pago</button><button className="rounded-lg border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { subscription_status: "overdue", payment_notes: "Marcado como inadimplente pelo Master." })}>Inadimplente</button><button className="rounded-lg border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { status: "canceled", subscription_status: "canceled" })}>Cancelar</button><button className="rounded-lg border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { status: "active", subscription_status: "active" })}>Reativar</button><a className="rounded-lg border px-3 py-2 font-bold" href={`/${company.slug}/admin`}>Simular</a><button className="rounded-lg bg-startt-red px-3 py-2 font-bold text-white" onClick={() => deleteCompany(company)}>Excluir</button></div>])} /></CrudShell>;
+  return <CrudShell title="Empresas" description="CRUD completo, controle de acesso e financeiro por empresa."><div className="flex flex-wrap justify-end gap-2"><button onClick={startCreate} className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-startt-green px-4 font-black text-white shadow-lg shadow-startt-green/20"><Plus size={18} /> Nova empresa</button></div><FormDrawer open={formOpen} title={form.id ? "Editar empresa" : "Nova empresa"} description="Controle dados comerciais, plano, assinatura e usuário inicial da lancheria." onClose={() => setFormOpen(false)}><form onSubmit={saveCompany} className="grid gap-3"><div className="grid gap-3 sm:grid-cols-2"><Input placeholder="Nome" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><Input placeholder="Slug" value={form.slug} onChange={(value) => setForm({ ...form, slug: value })} /><Input placeholder="WhatsApp" value={form.whatsapp} onChange={(value) => setForm({ ...form, whatsapp: value })} /><Input placeholder="Endereço" value={form.address} onChange={(value) => setForm({ ...form, address: value })} /><Select value={form.status} onChange={(value) => setForm({ ...form, status: value as CompanyStatus })}><option>trial</option><option>active</option><option>blocked</option><option>canceled</option></Select><Select value={form.plan_id} onChange={(value) => { const plan = selectedPlan(value); setForm({ ...form, plan_id: value, monthly_price: String(plan?.monthly_price || form.monthly_price) }); }}>{db.plans.filter((plan) => plan.is_active || plan.id === form.plan_id).map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</Select><Input placeholder="Cor principal" value={form.primary_color} onChange={(value) => setForm({ ...form, primary_color: value })} /><Input placeholder="Valor mensal" value={form.monthly_price} onChange={(value) => setForm({ ...form, monthly_price: value })} /><Input placeholder="Dia vencimento" value={form.due_day} onChange={(value) => setForm({ ...form, due_day: value })} /><Input type="date" placeholder="Próxima data" value={form.next_due_date} onChange={(value) => setForm({ ...form, next_due_date: value })} /><Select value={form.subscription_status} onChange={(value) => setForm({ ...form, subscription_status: value as SubscriptionStatus })}><option>trialing</option><option>active</option><option>overdue</option><option>canceled</option></Select><Input placeholder="Admin inicial opcional" value={form.admin_email} onChange={(value) => setForm({ ...form, admin_email: value })} /></div><Input placeholder="Observações financeiras" value={form.payment_notes} onChange={(value) => setForm({ ...form, payment_notes: value })} /><label className="flex items-center gap-2 rounded-2xl bg-startt-paper p-4 font-bold"><input type="checkbox" checked={form.is_registration_enabled} onChange={(event) => setForm({ ...form, is_registration_enabled: event.target.checked })} /> Cadastro/acesso habilitado</label><button className="min-h-12 rounded-xl bg-startt-green px-4 font-black text-white shadow-lg shadow-startt-green/20">{form.id ? "Salvar alterações" : "Criar empresa"}</button></form></FormDrawer><Table headers={["Empresa", "Slug", "Plano", "Assinatura", "Mensal", "Vencimento", "Ações"]} rows={db.companies.map((company) => [company.name, `/${company.slug}`, db.plans.find((plan) => plan.id === company.plan_id)?.name || company.plan, company.subscription_status, money(company.monthly_price), `${company.due_day} • ${company.next_due_date}`, <div key={company.id} className="flex flex-wrap gap-2"><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => startEdit(company)}>Editar</button><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { status: company.status === "blocked" ? "active" : "blocked" })}>{company.status === "blocked" ? "Desbloquear" : "Bloquear"}</button><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { subscription_status: "active", status: company.status === "blocked" ? "active" : company.status, last_payment_date: todayInput(), payment_notes: "Marcado como pago pelo Master." })}>Marcar pago</button><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { subscription_status: "overdue", payment_notes: "Marcado como inadimplente pelo Master." })}>Inadimplente</button><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { status: "canceled", subscription_status: "canceled" })}>Cancelar</button><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { status: "active", subscription_status: "active" })}>Reativar</button><a className="rounded-xl border px-3 py-2 font-bold" href={`/${company.slug}/admin`}>Simular</a><button className="rounded-xl bg-startt-red px-3 py-2 font-bold text-white" onClick={() => deleteCompany(company)}>Excluir</button></div>])} /></CrudShell>;
 }
 
 function MasterUsers({ db, setDbState }: { db: DatabaseApi; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
@@ -1056,7 +1143,7 @@ function MasterUserControls({ db, setDbState }: { db: DatabaseApi; setDbState: R
 }
 
 function ProductCard({ product, category, onOpen, onAdd }: { product: Product; category: string; onOpen: () => void; onAdd: () => void }) {
-  return <article onClick={onOpen} className="grid cursor-pointer overflow-hidden rounded-lg border border-black/10 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-xl"><div className="relative h-48 overflow-hidden"><img className="h-full w-full object-cover" src={product.image} alt={product.name} onError={(event) => { event.currentTarget.src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=900&q=80"; }} />{product.badge && <span className="absolute left-3 top-3 rounded-full bg-startt-yellow px-3 py-1 text-xs font-black">{product.badge}</span>}</div><div className="grid gap-4 p-4"><div><p className="mb-1 text-xs font-black uppercase text-startt-green">{category}</p><h3 className="text-xl font-black">{product.name}</h3><p className="mt-2 text-sm leading-6 text-startt-muted">{product.description}</p></div><div className="flex items-center justify-between"><strong className="text-xl">{money(product.price)}</strong><button onClick={(event) => { event.stopPropagation(); onAdd(); }} aria-label={`Adicionar ${product.name}`} className="grid h-10 w-10 place-items-center rounded-lg bg-startt-green text-white"><Plus size={18} /></button></div></div></article>;
+  return <article onClick={onOpen} className="sd-card-lift grid cursor-pointer overflow-hidden rounded-2xl border border-black/10 bg-white shadow-card"><div className="relative h-52 overflow-hidden"><img className="h-full w-full object-cover transition duration-500 hover:scale-105" src={product.image} alt={product.name} onError={(event) => { event.currentTarget.src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=900&q=80"; }} />{product.badge && <span className="absolute left-3 top-3 rounded-full bg-startt-yellow px-3 py-1 text-xs font-black shadow-lg">{product.badge}</span>}<span className="absolute bottom-3 right-3 rounded-full bg-white/95 px-3 py-1 text-xs font-black text-startt-green shadow">{product.preparation_time} min</span></div><div className="grid gap-4 p-4"><div><p className="mb-1 text-xs font-black uppercase text-startt-green">{category}</p><h3 className="text-xl font-black leading-tight">{product.name}</h3><p className="mt-2 line-clamp-2 text-sm leading-6 text-startt-muted">{product.description}</p></div><div className="flex items-center justify-between"><strong className="text-xl">{money(product.price)}</strong><button onClick={(event) => { event.stopPropagation(); onAdd(); }} aria-label={`Adicionar ${product.name}`} className="grid h-11 w-11 place-items-center rounded-xl bg-startt-green text-white shadow-lg shadow-startt-green/20"><Plus size={18} /></button></div></div></article>;
 }
 
 function ProductModal({ product, category, onClose, onAdd }: { product: Product; category: string; onClose: () => void; onAdd: () => void }) {
@@ -1110,14 +1197,65 @@ function CompanyInfoModal({ company, onClose }: { company: Company; onClose: () 
   );
 }
 
-function CrudShell({ title, description, children }: { title: string; description: string; children: React.ReactNode }) { return <section className="grid gap-5"><div className="rounded-lg border border-black/10 bg-white p-5"><span className="text-xs font-black uppercase text-startt-green">Admin</span><h1 className="mt-1 text-4xl font-black">{title}</h1><p className="mt-2 text-startt-muted">{description}</p></div>{children}</section>; }
-function Panel({ title, children }: { title: string; children: React.ReactNode }) { return <section className="grid gap-3 rounded-lg border border-black/10 bg-white p-4"><h2 className="text-xl font-black">{title}</h2>{children}</section>; }
-function Input({ value, onChange, placeholder, type = "text" }: { value: string; onChange: (value: string) => void; placeholder: string; type?: string }) { return <input type={type} className="min-h-11 rounded-lg border border-black/10 bg-white px-3 outline-startt-green" placeholder={placeholder} value={value} onChange={(event) => onChange(event.target.value)} />; }
-function Select({ value, onChange, children }: { value: string; onChange: (value: string) => void; children: React.ReactNode }) { return <select className="min-h-11 rounded-lg border border-black/10 bg-white px-3 outline-startt-green" value={value} onChange={(event) => onChange(event.target.value)}>{children}</select>; }
-function Toggle({ active, disabled, onClick, children }: { active: boolean; disabled?: boolean; onClick: () => void; children: React.ReactNode }) { return <button disabled={disabled} onClick={onClick} className={`min-h-11 rounded-lg border px-3 font-black disabled:opacity-40 ${active ? "border-startt-green bg-startt-green text-white" : "border-black/10 bg-white"}`}>{children}</button>; }
-function Table({ headers, rows }: { headers: string[]; rows: Array<Array<React.ReactNode>> }) { return <div className="overflow-hidden rounded-lg border border-black/10 bg-white"><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left"><thead className="bg-startt-soft text-sm text-startt-muted"><tr>{headers.map((header) => <th key={header} className="p-4">{header}</th>)}</tr></thead><tbody>{rows.length ? rows.map((row, i) => <tr key={i} className="border-t border-black/10">{row.map((cell, j) => <td key={j} className="p-4 align-top">{cell}</td>)}</tr>) : <tr className="border-t border-black/10"><td className="p-6 text-startt-muted" colSpan={headers.length}>Nenhum registro encontrado ainda.</td></tr>}</tbody></table></div></div>; }
-function Actions({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) { return <div className="flex gap-2"><button className="rounded-lg border border-black/10 bg-white px-3 py-2 font-black" onClick={onEdit}>Editar</button><button className="rounded-lg bg-startt-red px-3 py-2 font-black text-white" onClick={onDelete}>Excluir</button></div>; }
-function InlineAdd({ value, setValue, onAdd, placeholder }: { value: string; setValue: (value: string) => void; onAdd: () => void; placeholder: string }) { return <div className="flex gap-2 rounded-lg border border-black/10 bg-white p-4"><Input value={value} onChange={setValue} placeholder={placeholder} /><button onClick={onAdd} className="rounded-lg bg-startt-green px-4 font-black text-white">Cadastrar</button></div>; }
+function CrudShell({ title, description, children }: { title: string; description: string; children: React.ReactNode }) { return <section className="grid gap-5"><div className="rounded-2xl border border-black/10 bg-white/90 p-5 shadow-card backdrop-blur"><span className="text-xs font-black uppercase text-startt-green">Admin</span><h1 className="mt-1 text-3xl font-black md:text-4xl">{title}</h1><p className="mt-2 max-w-3xl text-startt-muted">{description}</p></div>{children}</section>; }
+function Panel({ title, children }: { title: string; children: React.ReactNode }) { return <section className="grid gap-3 rounded-2xl border border-black/10 bg-white p-4 shadow-card"><h2 className="text-lg font-black">{title}</h2>{children}</section>; }
+function Input({ value, onChange, placeholder, type = "text" }: { value: string; onChange: (value: string) => void; placeholder: string; type?: string }) { return <input type={type} className="min-h-12 rounded-xl border border-startt-border bg-white px-3 text-sm shadow-sm outline-startt-green transition focus:border-startt-green focus:shadow-input" placeholder={placeholder} value={value} onChange={(event) => onChange(event.target.value)} />; }
+function Select({ value, onChange, children }: { value: string; onChange: (value: string) => void; children: React.ReactNode }) { return <select className="min-h-12 rounded-xl border border-startt-border bg-white px-3 text-sm shadow-sm outline-startt-green transition focus:border-startt-green focus:shadow-input" value={value} onChange={(event) => onChange(event.target.value)}>{children}</select>; }
+function Toggle({ active, disabled, onClick, children }: { active: boolean; disabled?: boolean; onClick: () => void; children: React.ReactNode }) { return <button disabled={disabled} onClick={onClick} className={`min-h-12 rounded-xl border px-3 font-black disabled:opacity-40 ${active ? "border-startt-green bg-startt-green text-white shadow-lg shadow-startt-green/20" : "border-startt-border bg-white"}`}>{children}</button>; }
+function Table({ headers, rows }: { headers: string[]; rows: Array<Array<React.ReactNode>> }) { return <div className="overflow-hidden rounded-2xl border border-black/10 bg-white shadow-card"><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-startt-soft text-xs uppercase text-startt-muted"><tr>{headers.map((header) => <th key={header} className="px-4 py-3 font-black">{header}</th>)}</tr></thead><tbody>{rows.length ? rows.map((row, i) => <tr key={i} className="sd-tr border-t border-black/10">{row.map((cell, j) => <td key={j} className="p-4 align-middle">{cell}</td>)}</tr>) : <tr className="border-t border-black/10"><td className="p-8 text-center text-startt-muted" colSpan={headers.length}>Nenhum registro encontrado ainda.</td></tr>}</tbody></table></div></div>; }
+function Actions({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) { return <div className="flex flex-wrap gap-2"><button className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-black shadow-sm" onClick={onEdit}>Editar</button><button className="rounded-xl bg-startt-red px-3 py-2 text-sm font-black text-white shadow-sm" onClick={onDelete}>Excluir</button></div>; }
+function InlineAdd({ value, setValue, onAdd, placeholder }: { value: string; setValue: (value: string) => void; onAdd: () => void; placeholder: string }) { return <div className="flex flex-col gap-2 rounded-2xl border border-black/10 bg-white p-4 shadow-card sm:flex-row"><Input value={value} onChange={setValue} placeholder={placeholder} /><button onClick={onAdd} className="min-h-12 rounded-xl bg-startt-green px-4 font-black text-white shadow-lg shadow-startt-green/20">Cadastrar</button></div>; }
+function FormDrawer({ open, title, description, onClose, children }: { open: boolean; title: string; description: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div className={`fixed inset-0 z-[70] ${open ? "pointer-events-auto" : "pointer-events-none"}`}>
+      <button className={`absolute inset-0 bg-black/45 backdrop-blur-[2px] transition-opacity ${open ? "opacity-100" : "opacity-0"}`} onClick={onClose} aria-label="Fechar formulário" />
+      <aside className={`absolute bottom-0 right-0 grid h-[94vh] w-full grid-rows-[auto_1fr] rounded-t-3xl bg-white shadow-drawer transition-transform duration-300 ease-spring sm:top-0 sm:h-full sm:w-[min(620px,100%)] sm:rounded-none ${open ? "translate-y-0 sm:translate-x-0" : "translate-y-full sm:translate-x-full sm:translate-y-0"}`}>
+        <header className="flex items-start justify-between gap-4 border-b border-black/10 p-5">
+          <div>
+            <span className="text-xs font-black uppercase text-startt-green">Formulário</span>
+            <h2 className="mt-1 text-2xl font-black">{title}</h2>
+            <p className="mt-1 text-sm leading-6 text-startt-muted">{description}</p>
+          </div>
+          <button onClick={onClose} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-startt-soft" aria-label="Fechar"><X size={20} /></button>
+        </header>
+        <div className="mobile-safe-bottom overflow-auto p-5">{children}</div>
+      </aside>
+    </div>
+  );
+}
+function ImageUpload({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  const [dragging, setDragging] = useState(false);
+  async function applyFile(file?: File) {
+    if (!file) return;
+    try {
+      onChange(await readImageAsDataUrl(file));
+      notify("success", "Imagem carregada com preview local.");
+    } catch {
+      notify("error", "Envie um arquivo de imagem válido.");
+    }
+  }
+  return (
+    <div className="grid gap-3">
+      <span className="text-sm font-black text-startt-ink">{label}</span>
+      <label
+        className={`grid cursor-pointer gap-3 rounded-2xl border border-dashed p-4 transition ${dragging ? "drop-zone-active border-startt-green bg-startt-soft" : "border-startt-border bg-startt-paper"}`}
+        onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(event) => { event.preventDefault(); setDragging(false); void applyFile(event.dataTransfer.files[0]); }}
+      >
+        <input className="hidden" type="file" accept="image/*" onChange={(event) => void applyFile(event.target.files?.[0])} />
+        <div className="grid gap-3 sm:grid-cols-[120px_1fr] sm:items-center">
+          <img className="h-32 w-full rounded-xl object-cover sm:h-24" src={value || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=900&q=80"} alt="" onError={(event) => { event.currentTarget.src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=900&q=80"; }} />
+          <div className="grid gap-1 text-sm text-startt-muted">
+            <strong className="inline-flex items-center gap-2 text-startt-ink"><UploadCloud size={18} /> Arraste uma imagem ou toque para escolher</strong>
+            <span>Funciona com galeria do celular, drag and drop no desktop e salva como Base64 quando não houver storage.</span>
+          </div>
+        </div>
+      </label>
+      <Input placeholder="Ou cole uma URL de imagem" value={value} onChange={onChange} />
+    </div>
+  );
+}
 function Totals({ subtotal, discount, deliveryFee, total }: { subtotal: number; discount: number; deliveryFee: number; total: number }) { return <div className="grid gap-1 text-sm"><span className="flex justify-between">Subtotal <b>{money(subtotal)}</b></span><span className="flex justify-between">Desconto <b>-{money(discount)}</b></span><span className="flex justify-between">Entrega <b>{money(deliveryFee)}</b></span><strong className="flex justify-between text-base">Total <b>{money(total)}</b></strong></div>; }
 function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) { return <article className="flex items-center gap-3 rounded-lg border border-black/10 bg-white p-4"><span className="grid h-11 w-11 place-items-center rounded-lg bg-startt-soft text-startt-green">{icon}</span><div><strong className="block text-2xl">{value}</strong><small className="text-startt-muted">{label}</small></div></article>; }
 function AdminHero({ company, title, description }: { company?: Company; title: string; description: string }) { return <div className="relative isolate flex min-h-64 items-end overflow-hidden rounded-lg p-6 text-white"><img className="absolute inset-0 -z-20 h-full w-full object-cover" src={company?.hero_image || "https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?auto=format&fit=crop&w=1400&q=80"} alt="" /><div className="absolute inset-0 -z-10 bg-gradient-to-r from-black/85 to-black/25" /><div><span className="inline-flex items-center gap-2 text-sm font-black uppercase text-startt-yellow"><Building2 size={16} /> {company?.slug || "master"}</span><h1 className="mt-2 text-4xl font-black md:text-6xl">{title}</h1><p className="mt-2 max-w-2xl text-white/90">{description}</p></div></div>; }
@@ -1135,8 +1273,3 @@ function groupSum<T extends Record<string, unknown>>(items: T[], key: keyof T) {
 function sumByDay(items: Array<{ date: string; total: number }>) { return items.reduce<Record<string, number>>((acc, item) => { const day = item.date.slice(0, 10); acc[day] = (acc[day] || 0) + item.total; return acc; }, {}); }
 
 createRoot(document.getElementById("root")!).render(<App />);
-
-
-
-
-
