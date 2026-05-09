@@ -451,72 +451,55 @@ function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: Dat
   }
 
   return (
-    <main className="min-h-screen bg-startt-paper">
-      <AppHeader company={company} />
+    <main className="min-h-screen bg-[#f4f4f3]">
+      <header className="sticky top-0 z-40 bg-[#121212] px-4 py-3 text-white shadow-xl shadow-black/20">
+        <div className="mx-auto flex w-[min(1180px,100%)] items-center justify-between gap-3">
+          <a href={`/${company.slug}`} className="flex min-w-0 items-center gap-3">
+            {company.logo_url ? <img className="h-10 w-10 rounded-full object-cover" src={company.logo_url} alt={company.name} onError={(event) => { event.currentTarget.style.display = "none"; }} /> : <span className="grid h-10 w-10 place-items-center rounded-full bg-startt-green text-sm font-black">DOG</span>}
+            <strong className="truncate text-sm uppercase tracking-[0.18em]">{company.name}</strong>
+          </a>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setCartOpen(true)} className="relative grid h-11 w-11 place-items-center rounded-xl text-white transition hover:bg-white/10" aria-label="Abrir carrinho">
+              <ShoppingBag size={22} />
+              {itemCount > 0 && <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-startt-green px-1 text-xs font-black">{itemCount}</span>}
+            </button>
+            <button onClick={() => setCompanyInfoOpen(true)} className="grid h-11 w-11 place-items-center rounded-xl text-white transition hover:bg-white/10" aria-label="Informações"><Menu size={22} /></button>
+          </div>
+        </div>
+      </header>
       {!checkoutOnly && (
-        <section className="relative isolate flex min-h-[560px] items-end overflow-hidden px-4 pb-24 pt-10 md:px-10 md:pb-14">
-          <img className="absolute inset-0 -z-20 h-full w-full object-cover" src={company.banner_url || company.hero_image} alt={company.name} onError={(event) => { event.currentTarget.src = company.hero_image || "https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?auto=format&fit=crop&w=1400&q=80"; }} />
-          <div className="absolute inset-0 -z-10 bg-gradient-to-r from-black/90 via-black/55 to-black/20" />
-          <div className="absolute inset-x-0 bottom-0 -z-10 h-36 bg-gradient-to-t from-startt-paper to-transparent" />
-          <div className="mx-auto grid w-[min(1280px,100%)] gap-7 pb-2 text-white lg:grid-cols-[1fr_360px] lg:items-end">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-white/14 px-3 py-1 text-sm font-black uppercase backdrop-blur"><Sparkles size={16} /> Cardápio público</div>
-              <div className="mt-4 flex flex-wrap items-end gap-4">
-                {company.logo_url ? <img className="h-20 w-20 rounded-2xl border border-white/30 object-cover shadow-2xl" src={company.logo_url} alt={company.name} onError={(event) => { event.currentTarget.style.display = "none"; }} /> : <span className="grid h-20 w-20 place-items-center rounded-2xl border border-white/25 bg-white/15 text-4xl font-black backdrop-blur">S</span>}
-                <div>
-                  <h1 className="max-w-4xl text-5xl font-black leading-none md:text-7xl">{company.name}</h1>
-                  <div className="mt-3 flex flex-wrap gap-2 text-sm font-bold text-white/90">
-                    <span className="rounded-full bg-white/14 px-3 py-1">{company.opening_hours}</span>
-                    <span className="rounded-full bg-white/14 px-3 py-1">{company.estimated_delivery_time}</span>
-                    <span className="rounded-full bg-white/14 px-3 py-1">Pedido min. {money(company.minimum_order)}</span>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-white/14 px-3 py-1"><Star size={14} fill="currentColor" /> 4,8</span>
-                  </div>
-                </div>
-              </div>
-              <label className="mt-7 flex h-14 w-[min(680px,100%)] items-center gap-3 rounded-2xl bg-white px-4 text-startt-muted shadow-2xl">
-                <Search size={19} />
-                <input value={query} onChange={(event) => setQuery(event.target.value)} className="w-full border-0 bg-transparent text-startt-ink outline-none" placeholder="Buscar produtos, combos e bebidas" />
-              </label>
-            </div>
-            <div className="hidden rounded-2xl border border-white/20 bg-white/12 p-5 shadow-2xl backdrop-blur-xl lg:grid">
-              <span className="text-sm font-bold text-white/75">Entrega via WhatsApp</span>
-              <strong className="mt-1 text-2xl">Pedido enviado direto para a loja</strong>
-              <a href={`https://wa.me/${company.whatsapp}`} target="_blank" className="mt-5 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-white px-4 font-black text-startt-ink"><MessageCircle size={18} /> Falar no WhatsApp</a>
+        <section className="bg-[#121212] px-4 pb-7 pt-5 text-white">
+          <div className="mx-auto w-[min(1180px,100%)]">
+            <h1 className="text-4xl font-black uppercase leading-none tracking-tight md:text-6xl">
+              Cardápio <span className="text-startt-green">Digital</span>
+            </h1>
+            <p className="mt-4 max-w-xl text-sm leading-6 text-white/72">Escolha seus itens e envie o pedido direto pelo WhatsApp</p>
+            <div className="mt-5 flex flex-wrap items-center gap-3 text-sm">
+              <span className="inline-flex items-center gap-2 font-black text-emerald-400"><span className="h-2 w-2 rounded-full bg-emerald-500" /> {company.is_open ? "Aberto agora" : "Fechado agora"}</span>
+              <span className="text-white/56">{company.opening_hours.replace("Aberto hoje, ", "")}</span>
+              <span className="text-white/56">{company.estimated_delivery_time}</span>
+              <span className="inline-flex items-center gap-1 text-white/70"><Star size={14} fill="currentColor" /> 4,8</span>
             </div>
           </div>
         </section>
       )}
-      <section className="mx-auto grid w-[min(1280px,calc(100%-32px))] gap-6 py-7 lg:grid-cols-[280px_1fr]">
-        <aside className="grid gap-4 self-start lg:sticky lg:top-24">
-          <StatusCard company={company} />
-          <Panel title="Categorias">
-            <div className="flex gap-2 overflow-x-auto pb-1 lg:grid lg:overflow-visible">
-              <FilterButton active={categoryId === "all"} onClick={() => setCategoryId("all")}>Todos</FilterButton>
-              {categories.map((category) => <FilterButton key={category.id} active={categoryId === category.id} onClick={() => setCategoryId(category.id)}>{category.name}</FilterButton>)}
-            </div>
-          </Panel>
-          <Panel title="Cupons">
-            <span className="text-sm text-startt-muted">{bundle.coupons.filter((item) => item.active).map((item) => item.code).join(", ") || "Nenhum cupom ativo"}</span>
-          </Panel>
-        </aside>
-        <section>
-          <div className="mb-5 flex flex-col justify-between gap-3 md:flex-row md:items-end">
-            <div>
-              <span className="text-xs font-black uppercase text-startt-green">/{company.slug}</span>
-              <h2 className="text-3xl font-black">{checkoutOnly ? "Checkout" : "Cardápio"}</h2>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button onClick={() => setCartOpen(true)} className="inline-flex min-h-11 w-fit items-center gap-2 rounded-lg border border-black/10 bg-white px-4 font-extrabold"><ShoppingBag size={18} /> Ver pedido ({itemCount})</button>
-              <button onClick={() => setCompanyInfoOpen(true)} className="grid h-11 w-11 place-items-center rounded-lg border border-black/10 bg-white text-2xl font-black" aria-label="Informações da empresa">⋮</button>
-            </div>
+      <section className="mx-auto w-[min(1180px,calc(100%-24px))] py-4">
+        <div className="sticky top-[68px] z-30 -mx-3 grid gap-4 bg-[#f4f4f3]/95 px-3 py-4 backdrop-blur">
+          <label className="flex h-12 items-center gap-3 rounded-2xl border border-black/10 bg-white px-4 text-startt-muted shadow-sm">
+            <Search size={18} />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} className="w-full border-0 bg-transparent text-startt-ink outline-none" placeholder="Buscar produto..." />
+          </label>
+          <div className="flex gap-3 overflow-x-auto pb-1">
+            <MenuChip active={categoryId === "all"} onClick={() => setCategoryId("all")}>🍽️ Todos</MenuChip>
+            {categories.map((category) => <MenuChip key={category.id} active={categoryId === category.id} onClick={() => setCategoryId(category.id)}>{category.name.toLowerCase().includes("dog") ? "🌭" : "🍽️"} {category.name}</MenuChip>)}
           </div>
-          {!checkoutOnly && (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {filtered.map((product) => <ProductCard key={product.id} product={product} category={categories.find((item) => item.id === product.category_id)?.name || ""} onOpen={() => setSelectedProduct(product)} onAdd={() => add(product)} />)}
-              {!filtered.length && <div className="rounded-lg border border-black/10 bg-white p-6 text-startt-muted md:col-span-2 xl:col-span-3">Nenhum produto encontrado neste cardápio.</div>}
-            </div>
-          )}
-        </section>
+        </div>
+        {!checkoutOnly && (
+          <div className="grid gap-3 pb-24 pt-4 md:grid-cols-2">
+            {filtered.map((product) => <ProductCard key={product.id} product={product} category={categories.find((item) => item.id === product.category_id)?.name || ""} onOpen={() => setSelectedProduct(product)} onAdd={() => add(product)} />)}
+            {!filtered.length && <div className="rounded-3xl border border-black/10 bg-white p-8 text-center text-startt-muted md:col-span-2">Nenhum produto encontrado neste cardápio.</div>}
+          </div>
+        )}
       </section>
       <CartDrawer cartOpen={cartOpen} setCartOpen={setCartOpen} cart={cart} setCart={setCart} company={company} zones={activeZones} zoneId={zoneId} setZoneId={setZoneId} checkout={checkout} setCheckout={setCheckout} fulfillment={fulfillment} setFulfillment={setFulfillment} subtotal={subtotal} discount={discount} deliveryFee={deliveryFee} total={total} finishOrder={finishOrder} />
       {itemCount > 0 && !cartOpen && (
@@ -574,9 +557,9 @@ function CartDrawer({ cartOpen, setCartOpen, cart, setCart, company, zones, zone
     <div className={`fixed inset-0 z-50 ${cartOpen ? "pointer-events-auto" : "pointer-events-none"}`}>
       <button className={`absolute inset-0 border-0 bg-black/45 backdrop-blur-[2px] transition-opacity ${cartOpen ? "opacity-100" : "opacity-0"}`} onClick={() => setCartOpen(false)} aria-label="Fechar carrinho" />
       <aside className={`absolute bottom-0 right-0 grid h-[96dvh] w-full grid-rows-[auto_1fr_auto] rounded-t-3xl bg-white shadow-drawer transition-transform duration-300 ease-spring sm:right-3 sm:top-3 sm:h-[calc(100dvh-24px)] sm:w-[min(560px,calc(100%-24px))] sm:rounded-3xl ${cartOpen ? "translate-y-0 sm:translate-x-0" : "translate-y-full sm:translate-x-[calc(100%+24px)] sm:translate-y-0"}`}>
-        <div className="flex items-center justify-between border-b border-black/10 px-5 py-4">
-          <div><span className="text-sm font-bold text-startt-muted">Seu pedido</span><h2 className="text-2xl font-black leading-tight">Checkout</h2></div>
-          <button className="grid h-10 w-10 place-items-center rounded-xl bg-startt-soft" onClick={() => setCartOpen(false)} aria-label="Fechar"><X size={20} /></button>
+        <div className="flex items-center justify-between bg-[#121212] px-5 py-5 text-white sm:rounded-t-3xl">
+          <div><span className="inline-flex items-center gap-2 text-sm font-black uppercase"><ShoppingBag size={18} /> Seu pedido</span><p className="mt-2 text-sm text-white/62">Confira seu pedido antes de enviar</p></div>
+          <button className="grid h-10 w-10 place-items-center rounded-xl bg-white/10" onClick={() => setCartOpen(false)} aria-label="Fechar"><X size={20} /></button>
         </div>
         <div className="overflow-auto p-4">
           <div className="grid gap-4">
@@ -731,30 +714,34 @@ function CompanyAdmin({ db, setDbState, company, screen, login }: { db: Database
   }
 
   return (
-    <main className="min-h-screen bg-startt-paper">
-      <header className="sticky top-0 z-30 border-b border-black/10 bg-white/88 px-4 py-3 backdrop-blur-xl">
-        <div className="mx-auto grid w-[min(1280px,100%)] gap-3 lg:grid-cols-[260px_1fr_auto] lg:items-center">
-          <LogoTitle title="Startt Delivery" subtitle={`${company.name} • ${user.role}`} />
-          <label className="hidden min-h-12 items-center gap-3 rounded-2xl border border-black/10 bg-startt-paper px-4 text-startt-muted shadow-sm lg:flex">
-            <Search size={18} />
-            <input className="w-full bg-transparent text-sm outline-none" placeholder="Buscar pedidos, produtos, clientes..." />
-          </label>
-          <div className="flex flex-wrap items-center gap-2">
-            {newOrderBadge > 0 && <a href={`/${company.slug}/admin/pedidos`} onClick={() => setNewOrderBadge(0)} className={`rounded-lg px-4 py-3 font-black text-white ${newOrderFlash ? "bg-startt-red shadow-xl" : "bg-startt-green"}`}>{newOrderBadge} novo(s) pedido(s)</a>}
-            <button className="grid h-12 w-12 place-items-center rounded-2xl border border-black/10 bg-white shadow-sm" aria-label="Notificações"><Bell size={18} /></button>
-            <span className="grid h-12 w-12 place-items-center rounded-2xl bg-startt-ink text-sm font-black text-white">{user.name.slice(0, 2).toUpperCase()}</span>
-            <a className="rounded-xl border border-black/10 bg-white px-4 py-3 font-extrabold shadow-sm" href={`/${company.slug}`}>Ver cardápio</a>
+    <main className="min-h-screen bg-[#f1efec] lg:pl-72">
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-72 bg-[#121212] p-5 text-white lg:grid lg:grid-rows-[auto_1fr_auto]">
+        <div className="flex items-center gap-3 border-b border-white/10 pb-5">
+          <span className="grid h-12 w-12 place-items-center rounded-2xl bg-startt-green text-xl font-black">🌭</span>
+          <div><p className="font-black uppercase tracking-[0.18em]">{company.name}</p><p className="text-xs text-white/55">Administrador • {user.name}</p></div>
+        </div>
+        <nav className="mt-5 grid content-start gap-1 overflow-auto pr-1">
+          {adminNav.filter((item) => allowed.includes(item.id)).map((item) => <a key={item.id} href={`/${company.slug}/admin/${item.id}`} className={`flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-bold transition ${activeScreen === item.id ? "bg-startt-green text-white shadow-lg shadow-startt-green/25" : "text-white/72 hover:bg-white/10 hover:text-white"}`}>{item.icon}{item.label}</a>)}
+        </nav>
+        <div className="grid gap-2 border-t border-white/10 pt-4">
+          <a className="rounded-xl border border-white/10 px-3 py-3 text-sm font-bold text-white/80 hover:bg-white/10" href={`/${company.slug}`}>Ver site público ↗</a>
+          <button onClick={logout} className="flex min-h-11 items-center gap-3 rounded-xl bg-white/10 px-3 text-sm font-bold text-white"><LogOut size={18} /> Sair</button>
+          <p className="pt-2 text-xs font-bold text-white/36">Startt Facilities</p>
+        </div>
+      </aside>
+      <header className="sticky top-0 z-30 border-b border-black/10 bg-white px-4 py-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3"><button className="grid h-10 w-10 place-items-center rounded-xl hover:bg-startt-soft" aria-label="Menu"><Menu size={22} /></button><strong>{adminNav.find((item) => item.id === activeScreen)?.label || "Dashboard"}</strong></div>
+          <div className="flex items-center gap-2">
+            {newOrderBadge > 0 && <a href={`/${company.slug}/admin/pedidos`} onClick={() => setNewOrderBadge(0)} className={`rounded-xl px-3 py-2 text-sm font-black text-white ${newOrderFlash ? "bg-startt-red shadow-xl" : "bg-startt-green"}`}>{newOrderBadge} novo(s)</a>}
+            <a className="hidden rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-bold md:inline-flex" href={`/${company.slug}`}>Ver site</a>
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-startt-ink text-xs font-black text-white">{user.name.slice(0, 2).toUpperCase()}</span>
           </div>
         </div>
       </header>
-      <section className="mx-auto grid w-[min(1280px,calc(100%-32px))] gap-6 py-6 lg:grid-cols-[260px_1fr]">
-        <aside className="grid gap-1 self-start rounded-2xl border border-black/10 bg-white/90 p-3 shadow-card backdrop-blur lg:sticky lg:top-24">
-          {adminNav.filter((item) => allowed.includes(item.id)).map((item) => <a key={item.id} href={`/${company.slug}/admin/${item.id}`} className={`flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-extrabold transition hover:bg-startt-soft ${activeScreen === item.id ? "bg-startt-green text-white shadow-lg shadow-startt-green/20 hover:bg-startt-green" : "text-startt-ink"}`}>{item.icon}{item.label}</a>)}
-          <button onClick={logout} className="mt-2 flex min-h-11 items-center gap-3 rounded-xl bg-startt-soft px-3 text-sm font-extrabold"><LogOut size={18} /> Sair</button>
-        </aside>
+      <section className="p-4 md:p-6">
         <AdminContent screen={activeScreen} db={db} setDbState={setDbState} company={company} user={user} />
       </section>
-      <Footer />
     </main>
   );
 }
@@ -806,18 +793,31 @@ function Dashboard({ company, bundle }: { company: Company; bundle: ReturnType<D
 
   return (
     <section className="grid gap-5">
-      <AdminHero company={company} title="Dashboard" description="Resumo operacional da empresa logada." />
-      <DateFilters start={start} end={end} setStart={setStart} setEnd={setEnd} onPdf={pdf} />
-      <div className="grid gap-4 md:grid-cols-4">
-        <Metric label="Vendas do dia" value={money(salesToday)} icon={<CreditCard />} />
-        <Metric label="Vendas do mês" value={money(salesMonth)} icon={<BarChart3 />} />
-        <Metric label="Pedidos" value={String(online.length)} icon={<ClipboardList />} />
-        <Metric label="Ticket médio" value={money(total / Math.max(1, all.length))} icon={<FileText />} />
-        <Metric label="Pendentes" value={String(pending)} icon={<Bike />} />
-        <Metric label="Produtos ativos" value={String(bundle.products.filter((item) => item.active).length)} icon={<Package />} />
-        <Metric label="Clientes" value={String(bundle.customers.length)} icon={<UsersRound />} />
-        <Metric label="Caixa presencial" value={money(cash.reduce((sum, item) => sum + item.total, 0))} icon={<CreditCard />} />
+      <div>
+        <h2 className="text-2xl font-black tracking-tight">Boa tarde! 👋</h2>
+        <p className="mt-1 text-startt-muted">Aqui está o resumo do seu negócio</p>
       </div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Metric label="Vendas do dia" value={money(salesToday)} icon={<CreditCard />} />
+        <Metric label="Vendas da semana" value={money(total)} icon={<BarChart3 />} />
+        <Metric label="Vendas do mês" value={money(salesMonth)} icon={<Package />} />
+        <Metric label="Ticket médio" value={money(total / Math.max(1, all.length))} icon={<FileText />} />
+        <Metric label="Online (mês)" value={String(online.length)} icon={<ShoppingBag />} />
+        <Metric label="Presenciais (mês)" value={String(cash.length)} icon={<CreditCard />} />
+        <Metric label="Clientes" value={String(bundle.customers.length)} icon={<UsersRound />} />
+        <Metric label="Pendentes" value={String(pending)} icon={<Bike />} />
+      </div>
+      <Panel title="Atalhos rápidos">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <QuickLink href={`/${company.slug}/admin/caixa`} title="Caixa presencial" text="Registrar pedido balcão" icon={<CreditCard size={20} />} />
+          <QuickLink href={`/${company.slug}/admin/pedidos`} title="Ver pedidos" text="Acompanhe os pedidos" icon={<ClipboardList size={20} />} />
+          <QuickLink href={`/${company.slug}/admin/clientes`} title="Clientes" text="Cadastro e fidelidade" icon={<UsersRound size={20} />} />
+          <QuickLink href={`/${company.slug}/admin/produtos`} title="Novo produto" text="Adicionar ao cardápio" icon={<Package size={20} />} />
+          <QuickLink href={`/${company.slug}/admin/relatorios`} title="Relatórios PDF" text="Exportar por período" icon={<FileText size={20} />} />
+          <QuickLink href={`/${company.slug}/admin/configuracoes`} title="Configurações" text="Dados do negócio" icon={<Settings size={20} />} />
+        </div>
+      </Panel>
+      <DateFilters start={start} end={end} setStart={setStart} setEnd={setEnd} onPdf={pdf} />
       <div className="grid gap-5 xl:grid-cols-[1.25fr_.75fr]">
         <Panel title="Performance por dia">
           <div className="grid min-h-64 content-end gap-3">
@@ -1171,7 +1171,7 @@ function MasterUserControls({ db, setDbState }: { db: DatabaseApi; setDbState: R
 }
 
 function ProductCard({ product, category, onOpen, onAdd }: { product: Product; category: string; onOpen: () => void; onAdd: () => void }) {
-  return <article onClick={onOpen} className="sd-card-lift grid cursor-pointer overflow-hidden rounded-2xl border border-black/10 bg-white shadow-card"><div className="relative h-52 overflow-hidden"><img className="h-full w-full object-cover transition duration-500 hover:scale-105" src={product.image} alt={product.name} onError={(event) => { event.currentTarget.src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=900&q=80"; }} />{product.badge && <span className="absolute left-3 top-3 rounded-full bg-startt-yellow px-3 py-1 text-xs font-black shadow-lg">{product.badge}</span>}<span className="absolute bottom-3 right-3 rounded-full bg-white/95 px-3 py-1 text-xs font-black text-startt-green shadow">{product.preparation_time} min</span></div><div className="grid gap-4 p-4"><div><p className="mb-1 text-xs font-black uppercase text-startt-green">{category}</p><h3 className="text-xl font-black leading-tight">{product.name}</h3><p className="mt-2 line-clamp-2 text-sm leading-6 text-startt-muted">{product.description}</p></div><div className="flex items-center justify-between"><strong className="text-xl">{money(product.price)}</strong><button onClick={(event) => { event.stopPropagation(); onAdd(); }} aria-label={`Adicionar ${product.name}`} className="grid h-11 w-11 place-items-center rounded-xl bg-startt-green text-white shadow-lg shadow-startt-green/20"><Plus size={18} /></button></div></div></article>;
+  return <article onClick={onOpen} className="sd-card-lift grid min-h-40 cursor-pointer rounded-3xl border border-black/10 bg-white p-5 shadow-sm"><div className="flex h-full flex-col justify-between gap-5"><div><div className="mb-2 flex items-center justify-between gap-3"><span className="text-xs font-black uppercase text-startt-muted">{category}</span>{product.badge && <span className="rounded-full bg-startt-rose px-3 py-1 text-xs font-black text-startt-green">{product.badge}</span>}</div><h3 className="text-xl font-black leading-tight tracking-tight">{product.name}</h3>{product.description && <p className="mt-3 line-clamp-2 text-sm leading-6 text-startt-muted">{product.description}</p>}</div><div className="flex items-center justify-between gap-3"><strong className="font-display text-2xl font-black text-startt-green">{money(product.price)}</strong><button onClick={(event) => { event.stopPropagation(); onAdd(); }} aria-label={`Adicionar ${product.name}`} className="inline-flex min-h-11 items-center gap-2 rounded-2xl bg-startt-green px-4 text-sm font-black text-white shadow-lg shadow-startt-green/20"><Plus size={17} /> Adicionar</button></div></div></article>;
 }
 
 function ProductModal({ product, category, onClose, onAdd }: { product: Product; category: string; onClose: () => void; onAdd: () => void }) {
@@ -1225,8 +1225,8 @@ function CompanyInfoModal({ company, onClose }: { company: Company; onClose: () 
   );
 }
 
-function CrudShell({ title, description, children }: { title: string; description: string; children: React.ReactNode }) { return <section className="grid gap-5"><div className="rounded-2xl border border-black/10 bg-white/90 p-5 shadow-card backdrop-blur"><span className="text-xs font-black uppercase text-startt-green">Admin</span><h1 className="mt-1 text-3xl font-black md:text-4xl">{title}</h1><p className="mt-2 max-w-3xl text-startt-muted">{description}</p></div>{children}</section>; }
-function Panel({ title, children }: { title: string; children: React.ReactNode }) { return <section className="grid gap-3 rounded-2xl border border-black/10 bg-white p-4 shadow-card"><h2 className="text-lg font-black">{title}</h2>{children}</section>; }
+function CrudShell({ title, description, children }: { title: string; description: string; children: React.ReactNode }) { return <section className="grid gap-5"><div><h1 className="text-2xl font-black tracking-tight md:text-3xl">{title}</h1><p className="mt-1 max-w-3xl text-startt-muted">{description}</p></div>{children}</section>; }
+function Panel({ title, children }: { title: string; children: React.ReactNode }) { return <section className="grid gap-4 rounded-3xl border border-black/10 bg-white p-5 shadow-sm"><h2 className="text-lg font-black">{title}</h2>{children}</section>; }
 function Input({ value, onChange, placeholder, type = "text" }: { value: string; onChange: (value: string) => void; placeholder: string; type?: string }) { return <input type={type} className="min-h-12 rounded-xl border border-startt-border bg-white px-3 text-sm shadow-sm outline-startt-green transition focus:border-startt-green focus:shadow-input" placeholder={placeholder} value={value} onChange={(event) => onChange(event.target.value)} />; }
 function Select({ value, onChange, children }: { value: string; onChange: (value: string) => void; children: React.ReactNode }) { return <select className="min-h-12 rounded-xl border border-startt-border bg-white px-3 text-sm shadow-sm outline-startt-green transition focus:border-startt-green focus:shadow-input" value={value} onChange={(event) => onChange(event.target.value)}>{children}</select>; }
 function Toggle({ active, disabled, onClick, children }: { active: boolean; disabled?: boolean; onClick: () => void; children: React.ReactNode }) { return <button disabled={disabled} onClick={onClick} className={`min-h-12 rounded-xl border px-3 font-black disabled:opacity-40 ${active ? "border-startt-green bg-startt-green text-white shadow-lg shadow-startt-green/20" : "border-startt-border bg-white"}`}>{children}</button>; }
@@ -1250,6 +1250,12 @@ function FormDrawer({ open, title, description, onClose, children }: { open: boo
       </aside>
     </div>
   );
+}
+function MenuChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return <button onClick={onClick} className={`min-h-11 min-w-fit rounded-2xl border px-5 text-sm font-bold shadow-sm transition ${active ? "border-startt-green bg-startt-green text-white shadow-lg shadow-startt-green/20" : "border-black/10 bg-white text-startt-ink hover:border-startt-green/40"}`}>{children}</button>;
+}
+function QuickLink({ href, title, text, icon }: { href: string; title: string; text: string; icon: React.ReactNode }) {
+  return <a href={href} className="flex items-center gap-3 rounded-2xl border border-black/10 bg-white p-4 transition hover:-translate-y-0.5 hover:shadow-card-hover"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-startt-rose text-startt-green">{icon}</span><span><strong className="block">{title}</strong><small className="text-startt-muted">{text}</small></span></a>;
 }
 function ImageUpload({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   const [dragging, setDragging] = useState(false);
@@ -1285,7 +1291,7 @@ function ImageUpload({ label, value, onChange }: { label: string; value: string;
   );
 }
 function Totals({ subtotal, discount, deliveryFee, total }: { subtotal: number; discount: number; deliveryFee: number; total: number }) { return <div className="grid gap-1 text-sm"><span className="flex justify-between">Subtotal <b>{money(subtotal)}</b></span><span className="flex justify-between">Desconto <b>-{money(discount)}</b></span><span className="flex justify-between">Entrega <b>{money(deliveryFee)}</b></span><strong className="flex justify-between text-base">Total <b>{money(total)}</b></strong></div>; }
-function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) { return <article className="premium-surface group flex items-center gap-3 rounded-2xl p-4 transition hover:-translate-y-0.5 hover:shadow-card-hover"><span className="grid h-12 w-12 place-items-center rounded-2xl bg-startt-rose text-startt-green transition group-hover:scale-105">{icon}</span><div><strong className="block text-2xl tracking-tight">{value}</strong><small className="font-bold text-startt-muted">{label}</small></div></article>; }
+function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) { return <article className="group grid min-h-40 content-between rounded-3xl border border-black/10 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-card-hover"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-startt-rose text-startt-green transition group-hover:scale-105">{icon}</span><div><small className="font-bold uppercase text-startt-muted">{label}</small><strong className="mt-2 block text-3xl font-black tracking-tight">{value}</strong></div></article>; }
 function AdminHero({ company, title, description }: { company?: Company; title: string; description: string }) { return <div className="relative isolate flex min-h-72 items-end overflow-hidden rounded-3xl p-6 text-white shadow-card"><img className="absolute inset-0 -z-20 h-full w-full object-cover" src={company?.hero_image || "https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?auto=format&fit=crop&w=1400&q=80"} alt="" /><div className="absolute inset-0 -z-10 bg-[linear-gradient(120deg,rgba(20,17,15,.92),rgba(20,17,15,.58),rgba(242,106,27,.22))]" /><div className="absolute right-6 top-6 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-black backdrop-blur">{company?.slug || "master"}</div><div><span className="inline-flex items-center gap-2 rounded-full bg-white/12 px-3 py-1 text-sm font-black uppercase text-startt-yellow backdrop-blur"><Building2 size={16} /> Startt Facilities</span><h1 className="mt-3 text-4xl font-black tracking-tight md:text-6xl">{title}</h1><p className="mt-3 max-w-2xl text-white/86">{description}</p></div></div>; }
 function LogoTitle({ title, subtitle }: { title: string; subtitle: string }) { return <div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-startt-ink text-2xl font-black text-white shadow-card"><span className="accent-text">S</span></span><span><strong className="block leading-tight tracking-tight">{title}</strong><small className="block text-startt-muted">{subtitle}</small></span></div>; }
 function StatusCard({ company }: { company: Company }) { return <div className="premium-surface flex gap-3 rounded-2xl p-4"><span className={`mt-1 h-3 w-3 rounded-full ${company.is_open ? "bg-startt-green status-open" : "bg-startt-red"}`} /><div><strong className="block">{company.is_open ? "Loja aberta" : "Loja fechada"}</strong><span className="text-sm leading-6 text-startt-muted">{company.address}</span></div></div>; }
