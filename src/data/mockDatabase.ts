@@ -14,7 +14,7 @@ export type OrderStatus =
   | "concluido"
   | "cancelado";
 export type Fulfillment = "delivery" | "pickup";
-export type PaymentMethod = "Pix" | "Cartão" | "Dinheiro";
+export type PaymentMethod = "Pix" | "Cartão" | "Dinheiro" | "Vale alimentação/refeição";
 
 export type Company = {
   id: ID;
@@ -106,10 +106,21 @@ export type Customer = {
   company_id: ID;
   name: string;
   phone: string;
+  normalized_phone: string;
   address: string;
+  updated_at: string;
+  total_orders: number;
   total_spent: number;
   last_order_at: string;
   created_at: string;
+};
+
+export type VoucherBrand = {
+  id: ID;
+  company_id: ID;
+  name: string;
+  fee_percentage: number;
+  active: boolean;
 };
 
 export type DeliveryZone = {
@@ -150,6 +161,10 @@ export type Order = {
   order_number?: number;
   company_id: ID;
   customer_id: ID;
+  customer_name?: string;
+  customer_phone?: string;
+  normalized_phone?: string;
+  customer_address?: string;
   status: OrderStatus;
   fulfillment: Fulfillment;
   delivery_zone_id?: ID;
@@ -158,8 +173,15 @@ export type Order = {
   delivery_fee: number;
   total: number;
   payment_method: PaymentMethod;
+  payment_details?: string;
   cash_change_for?: number;
   calculated_change?: number;
+  change_for?: number;
+  change_amount?: number;
+  card_type?: "Débito" | "Crédito";
+  voucher_brand?: string;
+  voucher_fee_percentage?: number;
+  customer_note?: string;
   created_at: string;
 };
 
@@ -217,6 +239,7 @@ export type MockDatabaseState = {
   orders: Order[];
   order_items: OrderItem[];
   customers: Customer[];
+  voucher_brands: VoucherBrand[];
   delivery_zones: DeliveryZone[];
   coupons: Coupon[];
   settings: Settings[];
@@ -252,6 +275,11 @@ function zonesForCompany(company_id: ID) {
       .filter((neighborhood) => !existingNames.has(normalizedNeighborhood(neighborhood)))
       .map((neighborhood, index) => ({ id: `zon_${company_id}_${index}`, company_id, neighborhood, fee: 0, estimated_minutes: "A combinar", active: true })),
   ];
+}
+
+function normalizeSeedPhone(value: string) {
+  const digits = value.replace(/\D/g, "");
+  return digits.startsWith("55") && digits.length > 11 ? digits.slice(2) : digits;
 }
 
 export const initialMockDatabase: MockDatabaseState = {
@@ -376,10 +404,17 @@ export const initialMockDatabase: MockDatabaseState = {
     { id: "prd_bur_2", company_id: "cmp_burguerpaulo", category_id: "cat_bur_2", name: "Combo Smash", description: "Smash Paulo, fritas rústicas e bebida lata.", price: 47.9, image: "https://images.unsplash.com/photo-1572802419224-296b0aeee0d9?auto=format&fit=crop&w=900&q=80", ingredients: "Smash Paulo, fritas rústicas e bebida lata", preparation_time: 22, featured: false, active: true },
   ],
   customers: [
-    { id: "cus_dog_1", company_id: "cmp_dogexpress", name: "Rafael Costa", phone: "(51) 99999-1010", address: "Centro", total_spent: 206.5, last_order_at: now, created_at: now },
-    { id: "cus_dog_2", company_id: "cmp_dogexpress", name: "Marina Alves", phone: "(51) 99999-2020", address: "Moinhos", total_spent: 151.7, last_order_at: yesterday, created_at: yesterday },
-    { id: "cus_piz_1", company_id: "cmp_pizzariajoao", name: "Clara Nunes", phone: "(51) 98888-3030", address: "Bom Fim", total_spent: 73.8, last_order_at: now, created_at: now },
-    { id: "cus_bur_1", company_id: "cmp_burguerpaulo", name: "Lucas Vieira", phone: "(51) 97777-4040", address: "Auxiliadora", total_spent: 61.8, last_order_at: monthStart, created_at: monthStart },
+    { id: "cus_dog_1", company_id: "cmp_dogexpress", name: "Rafael Costa", phone: "(51) 99999-1010", normalized_phone: normalizeSeedPhone("(51) 99999-1010"), address: "Centro", total_orders: 4, total_spent: 206.5, last_order_at: now, created_at: now, updated_at: now },
+    { id: "cus_dog_2", company_id: "cmp_dogexpress", name: "Marina Alves", phone: "(51) 99999-2020", normalized_phone: normalizeSeedPhone("(51) 99999-2020"), address: "Moinhos", total_orders: 2, total_spent: 151.7, last_order_at: yesterday, created_at: yesterday, updated_at: yesterday },
+    { id: "cus_piz_1", company_id: "cmp_pizzariajoao", name: "Clara Nunes", phone: "(51) 98888-3030", normalized_phone: normalizeSeedPhone("(51) 98888-3030"), address: "Bom Fim", total_orders: 1, total_spent: 73.8, last_order_at: now, created_at: now, updated_at: now },
+    { id: "cus_bur_1", company_id: "cmp_burguerpaulo", name: "Lucas Vieira", phone: "(51) 97777-4040", normalized_phone: normalizeSeedPhone("(51) 97777-4040"), address: "Auxiliadora", total_orders: 1, total_spent: 61.8, last_order_at: monthStart, created_at: monthStart, updated_at: monthStart },
+  ],
+  voucher_brands: [
+    { id: "vou_dog_1", company_id: "cmp_dogexpress", name: "Alelo", fee_percentage: 4.5, active: true },
+    { id: "vou_dog_2", company_id: "cmp_dogexpress", name: "Sodexo", fee_percentage: 5, active: true },
+    { id: "vou_dog_3", company_id: "cmp_dogexpress", name: "VR", fee_percentage: 4, active: false },
+    { id: "vou_piz_1", company_id: "cmp_pizzariajoao", name: "Ticket", fee_percentage: 3.8, active: true },
+    { id: "vou_bur_1", company_id: "cmp_burguerpaulo", name: "Pluxee", fee_percentage: 4.2, active: true },
   ],
   delivery_zones: [...zonesForCompany("cmp_dogexpress"), ...zonesForCompany("cmp_pizzariajoao"), ...zonesForCompany("cmp_burguerpaulo")],
   coupons: [
@@ -389,7 +424,7 @@ export const initialMockDatabase: MockDatabaseState = {
   ],
   orders: [
     { id: "ord_dog_1", order_number: 10231, company_id: "cmp_dogexpress", customer_id: "cus_dog_1", status: "preparando", fulfillment: "delivery", delivery_zone_id: "zon_dog_1", subtotal: 54.8, discount: 0, delivery_fee: 7.9, total: 62.7, payment_method: "Pix", created_at: now },
-    { id: "ord_dog_2", order_number: 10232, company_id: "cmp_dogexpress", customer_id: "cus_dog_2", status: "saiu_para_entrega", fulfillment: "delivery", delivery_zone_id: "zon_dog_2", subtotal: 151.7, discount: 10, delivery_fee: 9.9, total: 151.6, payment_method: "Cartão", created_at: yesterday },
+    { id: "ord_dog_2", order_number: 10232, company_id: "cmp_dogexpress", customer_id: "cus_dog_2", status: "saiu_para_entrega", fulfillment: "delivery", delivery_zone_id: "zon_dog_2", subtotal: 151.7, discount: 10, delivery_fee: 9.9, total: 151.6, payment_method: "Cartão", card_type: "Crédito", payment_details: "Cartão • Crédito", created_at: yesterday },
     { id: "ord_piz_1", order_number: 48392, company_id: "cmp_pizzariajoao", customer_id: "cus_piz_1", status: "novo", fulfillment: "pickup", subtotal: 73.8, discount: 0, delivery_fee: 0, total: 73.8, payment_method: "Pix", created_at: now },
     { id: "ord_bur_1", order_number: 39218, company_id: "cmp_burguerpaulo", customer_id: "cus_bur_1", status: "concluido", fulfillment: "delivery", delivery_zone_id: "zon_bur_1", subtotal: 54.9, discount: 0, delivery_fee: 6.9, total: 61.8, payment_method: "Dinheiro", cash_change_for: 100, calculated_change: 38.2, created_at: monthStart },
   ],
@@ -432,6 +467,7 @@ export function createDatabaseApi(state: MockDatabaseState) {
         orders: state.orders.filter((item) => item.company_id === company_id),
         order_items: state.order_items.filter((item) => item.company_id === company_id),
         customers: state.customers.filter((item) => item.company_id === company_id),
+        voucher_brands: state.voucher_brands.filter((item) => item.company_id === company_id),
         delivery_zones: state.delivery_zones.filter((item) => item.company_id === company_id),
         coupons: state.coupons.filter((item) => item.company_id === company_id),
         settings: state.settings.find((item) => item.company_id === company_id),

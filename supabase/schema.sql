@@ -129,10 +129,23 @@ create table if not exists customers (
   company_id text not null references companies(id) on delete cascade,
   name text not null,
   phone text not null,
+  normalized_phone text not null default '',
   address text not null default '',
+  updated_at timestamptz not null default now(),
+  total_orders integer not null default 0,
   total_spent numeric(10,2) not null default 0,
   last_order_at timestamptz,
   created_at timestamptz not null default now()
+);
+
+create unique index if not exists customers_company_normalized_phone_idx on customers(company_id, normalized_phone) where normalized_phone <> '';
+
+create table if not exists voucher_brands (
+  id text primary key,
+  company_id text not null references companies(id) on delete cascade,
+  name text not null,
+  fee_percentage numeric(5,2) not null default 0,
+  active boolean not null default true
 );
 
 create table if not exists delivery_zones (
@@ -163,6 +176,10 @@ create table if not exists orders (
   order_number integer,
   company_id text not null references companies(id) on delete cascade,
   customer_id text not null references customers(id) on delete cascade,
+  customer_name text not null default '',
+  customer_phone text not null default '',
+  normalized_phone text not null default '',
+  customer_address text not null default '',
   status order_status not null default 'novo',
   fulfillment fulfillment_type not null,
   delivery_zone_id text references delivery_zones(id),
@@ -171,8 +188,15 @@ create table if not exists orders (
   delivery_fee numeric(10,2) not null default 0,
   total numeric(10,2) not null default 0,
   payment_method text not null,
+  payment_details text not null default '',
   cash_change_for numeric(10,2) default 0,
   calculated_change numeric(10,2) default 0,
+  change_for numeric(10,2) default 0,
+  change_amount numeric(10,2) default 0,
+  card_type text,
+  voucher_brand text,
+  voucher_fee_percentage numeric(5,2),
+  customer_note text,
   created_at timestamptz not null default now()
 );
 
@@ -225,6 +249,22 @@ create table if not exists reports (
   created_at timestamptz not null default now()
 );
 
+alter table customers add column if not exists normalized_phone text not null default '';
+alter table customers add column if not exists updated_at timestamptz not null default now();
+alter table customers add column if not exists total_orders integer not null default 0;
+
+alter table orders add column if not exists customer_name text not null default '';
+alter table orders add column if not exists customer_phone text not null default '';
+alter table orders add column if not exists normalized_phone text not null default '';
+alter table orders add column if not exists customer_address text not null default '';
+alter table orders add column if not exists payment_details text not null default '';
+alter table orders add column if not exists change_for numeric(10,2) default 0;
+alter table orders add column if not exists change_amount numeric(10,2) default 0;
+alter table orders add column if not exists card_type text;
+alter table orders add column if not exists voucher_brand text;
+alter table orders add column if not exists voucher_fee_percentage numeric(5,2);
+alter table orders add column if not exists customer_note text;
+
 alter table plans enable row level security;
 alter table companies enable row level security;
 alter table master_users enable row level security;
@@ -232,6 +272,7 @@ alter table users enable row level security;
 alter table categories enable row level security;
 alter table products enable row level security;
 alter table customers enable row level security;
+alter table voucher_brands enable row level security;
 alter table delivery_zones enable row level security;
 alter table coupons enable row level security;
 alter table orders enable row level security;
@@ -273,6 +314,11 @@ drop policy if exists "company own customers" on customers;
 create policy "company own customers" on customers for all using (public.jwt_is_master() or company_id = public.jwt_company_id()) with check (public.jwt_is_master() or company_id = public.jwt_company_id());
 drop policy if exists "public create customers" on customers;
 create policy "public create customers" on customers for insert with check (exists (select 1 from companies c where c.id = company_id and c.status in ('trial', 'active')));
+
+drop policy if exists "company own voucher_brands" on voucher_brands;
+create policy "company own voucher_brands" on voucher_brands for all using (public.jwt_is_master() or company_id = public.jwt_company_id()) with check (public.jwt_is_master() or company_id = public.jwt_company_id());
+drop policy if exists "public read active voucher_brands" on voucher_brands;
+create policy "public read active voucher_brands" on voucher_brands for select using (active = true and exists (select 1 from companies c where c.id = company_id and c.status in ('trial', 'active')));
 
 drop policy if exists "company own delivery_zones" on delivery_zones;
 create policy "company own delivery_zones" on delivery_zones for all using (public.jwt_is_master() or company_id = public.jwt_company_id()) with check (public.jwt_is_master() or company_id = public.jwt_company_id());

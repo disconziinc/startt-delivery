@@ -27,6 +27,7 @@ const tableNames = [
   "orders",
   "order_items",
   "customers",
+  "voucher_brands",
   "delivery_zones",
   "coupons",
   "settings",
@@ -71,14 +72,34 @@ function withDefaults(parsed: Partial<MockDatabaseState> = {}): MockDatabaseStat
     ...(parsed.delivery_zones || []),
     ...initialMockDatabase.delivery_zones.filter((seedZone) => !(parsed.delivery_zones || []).some((zone) => zone.company_id === seedZone.company_id && zone.neighborhood.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() === seedZone.neighborhood.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase())),
   ];
+  const customers = (parsed.customers || initialMockDatabase.customers).map((customer) => {
+    const digits = customer.phone.replace(/\D/g, "");
+    const normalized_phone = customer.normalized_phone || (digits.startsWith("55") && digits.length > 11 ? digits.slice(2) : digits);
+    return {
+      ...customer,
+      normalized_phone,
+      updated_at: customer.updated_at || customer.created_at || customer.last_order_at || new Date().toISOString(),
+      total_orders: customer.total_orders ?? Math.max(0, (parsed.orders || initialMockDatabase.orders).filter((order) => order.customer_id === customer.id).length),
+      total_spent: customer.total_spent ?? 0,
+      last_order_at: customer.last_order_at || "",
+    };
+  });
   const orders = (parsed.orders || initialMockDatabase.orders).map((order, index) => ({
     ...order,
+    customer_name: order.customer_name || customers.find((customer) => customer.id === order.customer_id)?.name || "",
+    customer_phone: order.customer_phone || customers.find((customer) => customer.id === order.customer_id)?.phone || "",
+    normalized_phone: order.normalized_phone || customers.find((customer) => customer.id === order.customer_id)?.normalized_phone || "",
+    customer_address: order.customer_address || customers.find((customer) => customer.id === order.customer_id)?.address || "",
     order_number: order.order_number || 10000 + index + 1,
     cash_change_for: order.cash_change_for || 0,
     calculated_change: order.calculated_change || 0,
+    change_for: order.change_for || order.cash_change_for || 0,
+    change_amount: order.change_amount || order.calculated_change || 0,
+    payment_details: order.payment_details || order.payment_method,
   }));
+  const voucher_brands = parsed.voucher_brands || initialMockDatabase.voucher_brands;
 
-  return { ...initialMockDatabase, ...parsed, plans, companies, products, master_users, delivery_zones, orders };
+  return { ...initialMockDatabase, ...parsed, plans, companies, products, master_users, delivery_zones, customers, orders, voucher_brands };
 }
 
 function readFallbackSnapshot(): MockDatabaseState {
@@ -157,6 +178,7 @@ export async function loadDatabaseSnapshot(): Promise<MockDatabaseState> {
       orders,
       order_items,
       customers,
+      voucher_brands,
       delivery_zones,
       coupons,
       settings,
@@ -173,6 +195,7 @@ export async function loadDatabaseSnapshot(): Promise<MockDatabaseState> {
       selectAll<MockDatabaseState["orders"][number]>("orders"),
       selectAll<MockDatabaseState["order_items"][number]>("order_items"),
       selectAll<MockDatabaseState["customers"][number]>("customers"),
+      selectAll<MockDatabaseState["voucher_brands"][number]>("voucher_brands"),
       selectAll<MockDatabaseState["delivery_zones"][number]>("delivery_zones"),
       selectAll<MockDatabaseState["coupons"][number]>("coupons"),
       selectAll<MockDatabaseState["settings"][number]>("settings"),
@@ -191,6 +214,7 @@ export async function loadDatabaseSnapshot(): Promise<MockDatabaseState> {
       orders,
       order_items,
       customers,
+      voucher_brands,
       delivery_zones,
       coupons,
       settings,

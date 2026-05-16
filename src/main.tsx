@@ -46,6 +46,7 @@ import {
   Fulfillment,
   MockDatabaseState,
   Order,
+  OrderItem,
   OrderStatus,
   PaymentMethod,
   Plan,
@@ -54,6 +55,7 @@ import {
   SubscriptionStatus,
   User,
   UserRole,
+  VoucherBrand,
 } from "./data/mockDatabase";
 import {
   DATABASE_STORAGE_KEY,
@@ -76,8 +78,12 @@ type CheckoutState = {
   city: string;
   state: string;
   payment_method: PaymentMethod;
+  card_type: "Débito" | "Crédito";
+  voucher_brand_id: string;
+  needs_change: "Não" | "Sim";
   coupon: string;
   cash_change_for: string;
+  customer_note: string;
 };
 type AdminScreen =
   | "dashboard"
@@ -157,6 +163,84 @@ function parseMoney(value: string | number) {
 
 function normalizeText(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+
+function normalizePhone(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (digits.startsWith("55") && digits.length > 11) return digits.slice(2);
+  return digits;
+}
+
+function whatsappPhone(value: string) {
+  const normalized = normalizePhone(value);
+  return normalized.startsWith("55") ? normalized : `55${normalized}`;
+}
+
+function findCustomerByPhone(customers: Customer[], companyId: string, phone: string) {
+  const normalized = normalizePhone(phone);
+  return customers.find((customer) => customer.company_id === companyId && (customer.normalized_phone || normalizePhone(customer.phone)) === normalized);
+}
+
+function htmlEscape(value: string) {
+  return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char] || char));
+}
+
+function orderPaymentLines(order: Order) {
+  const lines = [`Pagamento: ${order.payment_method}`];
+  if (order.payment_method === "Dinheiro" && (order.change_for || order.cash_change_for)) {
+    const changeFor = order.change_for || order.cash_change_for || 0;
+    const changeAmount = order.change_amount || order.calculated_change || 0;
+    lines.push(`Troco para: ${money(changeFor)}`);
+    lines.push(`Troco estimado: ${money(changeAmount)}`);
+  }
+  if (order.payment_method === "Cartão" && order.card_type) lines.push(`Tipo: ${order.card_type}`);
+  if (order.payment_method === "Vale alimentação/refeição" && order.voucher_brand) {
+    lines.push(`Marca: ${order.voucher_brand}`);
+    if (order.voucher_fee_percentage) lines.push(`Taxa da marca: ${order.voucher_fee_percentage}%`);
+  }
+  return lines;
+}
+
+function buildOrderNote(company: Company, order: Order, items: OrderItem[]) {
+  const created = new Date(order.created_at);
+  const date = created.toLocaleDateString("pt-BR");
+  const time = created.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const itemLines = items.length
+    ? items.map((item) => `${item.quantity}x ${item.name} | Unit. ${money(item.unit_price)} | Subtotal ${money(item.total)}`).join("\n")
+    : "Itens não informados";
+  return [
+    company.name,
+    "Startt Delivery - Produzido por Startt Facilities",
+    `Pedido #${displayOrderNumber(order)}`,
+    `${date} às ${time}`,
+    "",
+    "Cliente",
+    `Nome: ${order.customer_name || "Cliente"}`,
+    `Telefone: ${order.customer_phone || "-"}`,
+    `Endereço: ${order.customer_address || "Retirada"}`,
+    "",
+    "Itens vendidos",
+    itemLines,
+    "",
+    "Totais",
+    `Subtotal: ${money(order.subtotal)}`,
+    `Entrega: ${money(order.delivery_fee)}`,
+    order.discount ? `Descontos/cupons: ${money(order.discount)}` : "",
+    `Total final: ${money(order.total)}`,
+    "",
+    "Pagamento",
+    ...orderPaymentLines(order),
+    order.customer_note ? `\nObservação do cliente: ${order.customer_note}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+function buildOrderNoteHtml(company: Company, order: Order, items: OrderItem[]) {
+  const created = new Date(order.created_at);
+  const date = created.toLocaleDateString("pt-BR");
+  const time = created.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const rows = items.map((item) => `<tr><td>${item.quantity}x</td><td>${htmlEscape(item.name)}</td><td>${money(item.unit_price)}</td><td>${money(item.total)}</td></tr>`).join("");
+  const paymentRows = orderPaymentLines(order).map((line) => `<p>${htmlEscape(line)}</p>`).join("");
+  return `<h1>${htmlEscape(company.name)}</h1><p><strong>Startt Delivery</strong> - Produzido por Startt Facilities</p><p><strong>Pedido:</strong> #${displayOrderNumber(order)}</p><p><strong>Data:</strong> ${date} às ${time}</p><h2>Cliente</h2><p><strong>Nome:</strong> ${htmlEscape(order.customer_name || "Cliente")}</p><p><strong>Telefone:</strong> ${htmlEscape(order.customer_phone || "-")}</p><p><strong>Endereço:</strong> ${htmlEscape(order.customer_address || "Retirada")}</p><h2>Itens vendidos</h2><table><tr><th>Qtd</th><th>Item</th><th>Unitário</th><th>Total</th></tr>${rows || "<tr><td colspan='4'>Itens não informados</td></tr>"}</table><h2>Totais</h2><p>Subtotal: ${money(order.subtotal)}</p><p>Entrega: ${money(order.delivery_fee)}</p>${order.discount ? `<p>Descontos/cupons: ${money(order.discount)}</p>` : ""}<h2>Total final: ${money(order.total)}</h2><h2>Pagamento</h2>${paymentRows}${order.customer_note ? `<h2>Observações</h2><p>${htmlEscape(order.customer_note)}</p>` : ""}<p class="signature">Startt Delivery - produzido por Startt Facilities</p>`;
 }
 
 function readImageAsDataUrl(file: File): Promise<string> {
@@ -366,7 +450,10 @@ function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: Dat
   const [companyInfoOpen, setCompanyInfoOpen] = useState(false);
   const [fulfillment, setFulfillment] = useState<Fulfillment>(company.delivery_enabled ? "delivery" : "pickup");
   const [zoneId, setZoneId] = useState("");
-  const [checkout, setCheckout] = useState<CheckoutState>({ name: "", phone: "", cep: "", address: "", number: "", complement: "", neighborhood: "", city: "", state: "", payment_method: "Pix" as PaymentMethod, coupon: "", cash_change_for: "" });
+  const [checkout, setCheckout] = useState<CheckoutState>({ name: "", phone: "", cep: "", address: "", number: "", complement: "", neighborhood: "", city: "", state: "", payment_method: "Pix" as PaymentMethod, card_type: "Débito", voucher_brand_id: "", needs_change: "Não", coupon: "", cash_change_for: "", customer_note: "" });
+  const [phoneGateSkipped, setPhoneGateSkipped] = useState(false);
+  const [phoneLookup, setPhoneLookup] = useState("");
+  const [phoneLookupMessage, setPhoneLookupMessage] = useState("");
 
   useEffect(() => localStorage.setItem(cartKey(company.id), JSON.stringify(cart)), [cart, company.id]);
 
@@ -381,7 +468,9 @@ function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: Dat
   const zone = activeZones.find((item) => item.id === zoneId);
   const deliveryFee = fulfillment === "delivery" ? zone?.fee || 0 : 0;
   const total = Math.max(0, subtotal - discount) + deliveryFee;
-  const cashChangeFor = Number(checkout.cash_change_for) || 0;
+  const activeVoucherBrands = bundle.voucher_brands.filter((item) => item.active);
+  const voucherBrand = bundle.voucher_brands.find((item) => item.id === checkout.voucher_brand_id);
+  const cashChangeFor = checkout.needs_change === "Sim" ? parseMoney(checkout.cash_change_for) || 0 : 0;
   const calculatedChange = checkout.payment_method === "Dinheiro" && cashChangeFor > 0 ? Math.max(0, cashChangeFor - total) : 0;
   const itemCount = cart.reduce((sum, item) => sum + item.qty, 0);
 
@@ -394,60 +483,94 @@ function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: Dat
     notify("success", `${product.name} adicionado ao pedido.`);
   }
 
+  function lookupCustomerPhone() {
+    const normalized = normalizePhone(phoneLookup);
+    if (normalized.length < 10) {
+      notify("error", "Informe um telefone com DDD para buscar seu cadastro.");
+      return;
+    }
+    const customer = findCustomerByPhone(bundle.customers, company.id, phoneLookup);
+    if (customer) {
+      setCheckout({ ...checkout, name: customer.name, phone: customer.phone, address: customer.address });
+      setPhoneLookupMessage(`Encontramos seu cadastro, ${customer.name}. Seus dados já foram preenchidos para agilizar o pedido.`);
+      notify("success", "Cadastro encontrado e preenchido.");
+      return;
+    }
+    setCheckout({ ...checkout, phone: phoneLookup });
+    setPhoneLookupMessage("Ainda não encontramos esse telefone. Você pode navegar normalmente e finalizar preenchendo nome e endereço.");
+    notify("info", "Telefone guardado para o checkout.");
+  }
+
   function finishOrder() {
     if (!cart.length) {
       notify("error", "Adicione pelo menos um produto antes de finalizar.");
       return;
     }
-    if (!checkout.name.trim() || !checkout.phone.trim()) {
-      notify("error", "Informe nome e telefone para finalizar o pedido.");
+    const normalizedPhone = normalizePhone(checkout.phone);
+    if (!checkout.name.trim() || normalizedPhone.length < 10) {
+      notify("error", "Informe nome e telefone com DDD para finalizar o pedido.");
       return;
     }
-    if (fulfillment === "delivery" && (!checkout.address.trim() || !zoneId)) {
+    if (!checkout.address.trim()) {
+      notify("error", "Informe o endereço para finalizar o cadastro do pedido.");
+      return;
+    }
+    if (fulfillment === "delivery" && !zoneId) {
       notify("error", "Informe endereço e bairro de entrega.");
       return;
     }
-    const customerId = id("cus");
+    if (checkout.payment_method === "Cartão" && !checkout.card_type) {
+      notify("error", "Escolha débito ou crédito para registrar o pagamento.");
+      return;
+    }
+    if (checkout.payment_method === "Vale alimentação/refeição" && !voucherBrand) {
+      notify("error", "Escolha a marca do vale para registrar o pagamento.");
+      return;
+    }
     const orderId = id("ord");
     const createdAt = new Date().toISOString();
     const orderNumber = nextOrderNumber(db.orders, company.id);
-    const fullAddress = fulfillment === "delivery" ? `${checkout.address}, ${checkout.number}${checkout.complement ? ` - ${checkout.complement}` : ""} - ${checkout.neighborhood} - ${checkout.city}/${checkout.state} - CEP ${checkout.cep}` : "Retirada";
-    setDbState((current) => ({
-      ...current,
-      customers: [
-        ...current.customers,
-        { id: customerId, company_id: company.id, name: checkout.name || "Cliente WhatsApp", phone: checkout.phone || "Não informado", address: fullAddress, total_spent: total, last_order_at: createdAt, created_at: createdAt },
-      ],
-      coupons: coupon ? current.coupons.map((item) => item.id === coupon.id && item.company_id === company.id ? { ...item, used_count: item.used_count + 1 } : item) : current.coupons,
-      orders: [
-        { id: orderId, order_number: orderNumber, company_id: company.id, customer_id: customerId, status: "novo", fulfillment, delivery_zone_id: fulfillment === "delivery" ? zoneId : undefined, subtotal, discount, delivery_fee: deliveryFee, total, payment_method: checkout.payment_method, cash_change_for: cashChangeFor, calculated_change: calculatedChange, created_at: createdAt },
-        ...current.orders,
-      ],
-      order_items: [
-        ...cart.map((item) => ({ id: id("oit"), company_id: company.id, order_id: orderId, product_id: item.id, name: item.name, quantity: item.qty, unit_price: item.price, total: item.qty * item.price })),
-        ...current.order_items,
-      ],
-    }));
+    const fullAddress = fulfillment === "delivery" ? `${checkout.address}, ${checkout.number}${checkout.complement ? ` - ${checkout.complement}` : ""} - ${checkout.neighborhood} - ${checkout.city}/${checkout.state} - CEP ${checkout.cep}` : checkout.address.trim();
+    const existingCustomer = findCustomerByPhone(db.customers, company.id, normalizedPhone);
+    const customerId = existingCustomer?.id || id("cus");
+    const paymentDetails = orderPaymentLines({
+      id: orderId,
+      order_number: orderNumber,
+      company_id: company.id,
+      customer_id: customerId,
+      status: "novo",
+      fulfillment,
+      subtotal,
+      discount,
+      delivery_fee: deliveryFee,
+      total,
+      payment_method: checkout.payment_method,
+      change_for: cashChangeFor,
+      change_amount: calculatedChange,
+      cash_change_for: cashChangeFor,
+      calculated_change: calculatedChange,
+      card_type: checkout.card_type,
+      voucher_brand: voucherBrand?.name,
+      voucher_fee_percentage: voucherBrand?.fee_percentage,
+      created_at: createdAt,
+    }).join(" | ");
+    const order: Order = { id: orderId, order_number: orderNumber, company_id: company.id, customer_id: customerId, customer_name: checkout.name.trim(), customer_phone: checkout.phone.trim(), normalized_phone: normalizedPhone, customer_address: fullAddress, status: "novo", fulfillment, delivery_zone_id: fulfillment === "delivery" ? zoneId : undefined, subtotal, discount, delivery_fee: deliveryFee, total, payment_method: checkout.payment_method, payment_details: paymentDetails, cash_change_for: cashChangeFor, calculated_change: calculatedChange, change_for: cashChangeFor, change_amount: calculatedChange, card_type: checkout.payment_method === "Cartão" ? checkout.card_type : undefined, voucher_brand: checkout.payment_method === "Vale alimentação/refeição" ? voucherBrand?.name : undefined, voucher_fee_percentage: checkout.payment_method === "Vale alimentação/refeição" ? voucherBrand?.fee_percentage : undefined, customer_note: checkout.customer_note, created_at: createdAt };
+    const orderItems: OrderItem[] = cart.map((item) => ({ id: id("oit"), company_id: company.id, order_id: orderId, product_id: item.id, name: item.name, quantity: item.qty, unit_price: item.price, total: item.qty * item.price }));
+    setDbState((current) => {
+      const customerInState = findCustomerByPhone(current.customers, company.id, normalizedPhone);
+      const customer: Customer = customerInState
+        ? { ...customerInState, name: checkout.name.trim(), phone: checkout.phone.trim(), normalized_phone: normalizedPhone, address: fullAddress, updated_at: createdAt, last_order_at: createdAt, total_orders: (customerInState.total_orders || 0) + 1, total_spent: (customerInState.total_spent || 0) + total }
+        : { id: customerId, company_id: company.id, name: checkout.name.trim(), phone: checkout.phone.trim(), normalized_phone: normalizedPhone, address: fullAddress, created_at: createdAt, updated_at: createdAt, last_order_at: createdAt, total_orders: 1, total_spent: total };
+      return {
+        ...current,
+        customers: customerInState ? current.customers.map((item) => item.id === customerInState.id ? customer : item) : [customer, ...current.customers],
+        coupons: coupon ? current.coupons.map((item) => item.id === coupon.id && item.company_id === company.id ? { ...item, used_count: item.used_count + 1 } : item) : current.coupons,
+        orders: [order, ...current.orders],
+        order_items: [...orderItems, ...current.order_items],
+      };
+    });
     window.dispatchEvent(new CustomEvent(NEW_ORDER_EVENT, { detail: { company_id: company.id, order_id: orderId } }));
-    const message = [
-      `Olá, ${company.name}! Quero fazer um pedido:`,
-      "",
-      `Empresa: ${company.name}`,
-      `Pedido: #${String(orderNumber).padStart(5, "0")}`,
-      `Cliente: ${checkout.name}`,
-      `Telefone: ${checkout.phone}`,
-      `Pagamento: ${checkout.payment_method}`,
-      checkout.payment_method === "Dinheiro" && cashChangeFor > 0 ? `Troco para: ${money(cashChangeFor)} | Troco: ${money(calculatedChange)}` : "",
-      "",
-      "Itens:",
-      ...cart.map((item) => `${item.qty}x ${item.name} - ${money(item.qty * item.price)}`),
-      "",
-      `Subtotal: ${money(subtotal)}`,
-      `Desconto: -${money(discount)}`,
-      fulfillment === "delivery" ? `Entrega: ${zone?.neighborhood || "Confirmar"} - ${money(deliveryFee)}` : "Retirada no local",
-      `Total: ${money(total)}`,
-      fulfillment === "delivery" ? `Endereço: ${fullAddress}` : "Retirada no local",
-    ].filter(Boolean).join("\n");
+    const message = buildOrderNote(company, order, orderItems);
     window.open(`https://wa.me/${company.whatsapp}?text=${encodeURIComponent(message)}`, "_blank");
     setCart([]);
     setCartOpen(false);
@@ -492,6 +615,25 @@ function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: Dat
         </section>
       )}
       <section className="mx-auto w-[min(1180px,calc(100%-24px))] py-4">
+        {!checkoutOnly && !phoneGateSkipped && !checkout.name && (
+          <div className="mb-4 overflow-hidden rounded-3xl border border-black/10 bg-white shadow-sm">
+            <div className="grid gap-4 p-5 md:grid-cols-[1.2fr_1fr] md:items-center">
+              <div>
+                <span className="inline-flex items-center gap-2 rounded-full bg-startt-green/10 px-3 py-1 text-xs font-black uppercase text-startt-green"><UsersRound size={14} /> Cadastro inteligente</span>
+                <h2 className="mt-3 text-2xl font-black tracking-tight">Agilize seu pedido pelo telefone</h2>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-startt-muted">Informe seu telefone para buscarmos seus dados. Se ainda não tiver cadastro, você poderá finalizar com nome e endereço e receber novidades e cupons da lancheria.</p>
+                {phoneLookupMessage && <p className="mt-3 rounded-2xl bg-startt-paper px-4 py-3 text-sm font-bold text-startt-ink">{phoneLookupMessage}</p>}
+              </div>
+              <div className="grid gap-3 rounded-3xl bg-startt-paper p-3">
+                <Input placeholder="Seu WhatsApp com DDD" value={phoneLookup} onChange={setPhoneLookup} />
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <button onClick={lookupCustomerPhone} className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-startt-green px-4 font-black text-white">Continuar</button>
+                  <button onClick={() => setPhoneGateSkipped(true)} className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-black/10 bg-white px-4 font-black text-startt-ink">Pular por enquanto</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="sticky top-[68px] z-30 -mx-3 grid gap-4 bg-[#f4f4f3]/95 px-3 py-4 backdrop-blur">
           <label className="flex h-12 items-center gap-3 rounded-2xl border border-black/10 bg-white px-4 text-startt-muted shadow-sm">
             <Search size={18} />
@@ -509,7 +651,7 @@ function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: Dat
           </div>
         )}
       </section>
-      <CartDrawer cartOpen={cartOpen} setCartOpen={setCartOpen} cart={cart} setCart={setCart} company={company} zones={activeZones} zoneId={zoneId} setZoneId={setZoneId} checkout={checkout} setCheckout={setCheckout} fulfillment={fulfillment} setFulfillment={setFulfillment} subtotal={subtotal} discount={discount} deliveryFee={deliveryFee} total={total} finishOrder={finishOrder} />
+      <CartDrawer cartOpen={cartOpen} setCartOpen={setCartOpen} cart={cart} setCart={setCart} company={company} zones={activeZones} zoneId={zoneId} setZoneId={setZoneId} checkout={checkout} setCheckout={setCheckout} fulfillment={fulfillment} setFulfillment={setFulfillment} voucherBrands={activeVoucherBrands} subtotal={subtotal} discount={discount} deliveryFee={deliveryFee} total={total} finishOrder={finishOrder} />
       {itemCount > 0 && !cartOpen && (
         <button onClick={() => setCartOpen(true)} className="mobile-safe-bottom fixed inset-x-4 bottom-3 z-40 flex min-h-14 items-center justify-between rounded-2xl bg-startt-green px-4 font-black text-white shadow-2xl md:hidden">
           <span className="inline-flex items-center gap-2"><ShoppingBag size={18} /> Ver pedido</span>
@@ -523,11 +665,11 @@ function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: Dat
   );
 }
 
-function CartDrawer({ cartOpen, setCartOpen, cart, setCart, company, zones, zoneId, setZoneId, checkout, setCheckout, fulfillment, setFulfillment, subtotal, discount, deliveryFee, total, finishOrder }: { cartOpen: boolean; setCartOpen: (value: boolean) => void; cart: CartItem[]; setCart: React.Dispatch<React.SetStateAction<CartItem[]>>; company: Company; zones: DeliveryZone[]; zoneId: string; setZoneId: (value: string) => void; checkout: CheckoutState; setCheckout: (value: CheckoutState) => void; fulfillment: Fulfillment; setFulfillment: (value: Fulfillment) => void; subtotal: number; discount: number; deliveryFee: number; total: number; finishOrder: () => void }) {
+function CartDrawer({ cartOpen, setCartOpen, cart, setCart, company, zones, zoneId, setZoneId, checkout, setCheckout, fulfillment, setFulfillment, voucherBrands, subtotal, discount, deliveryFee, total, finishOrder }: { cartOpen: boolean; setCartOpen: (value: boolean) => void; cart: CartItem[]; setCart: React.Dispatch<React.SetStateAction<CartItem[]>>; company: Company; zones: DeliveryZone[]; zoneId: string; setZoneId: (value: string) => void; checkout: CheckoutState; setCheckout: (value: CheckoutState) => void; fulfillment: Fulfillment; setFulfillment: (value: Fulfillment) => void; voucherBrands: VoucherBrand[]; subtotal: number; discount: number; deliveryFee: number; total: number; finishOrder: () => void }) {
   const [cepLoading, setCepLoading] = useState(false);
   const [cepMessage, setCepMessage] = useState("");
   const selectedZone = zones.find((zone) => zone.id === zoneId);
-  const cashChangeFor = Number(checkout.cash_change_for) || 0;
+  const cashChangeFor = parseMoney(checkout.cash_change_for) || 0;
   const calculatedChange = checkout.payment_method === "Dinheiro" && cashChangeFor > 0 ? Math.max(0, cashChangeFor - total) : 0;
   function qty(productId: string, delta: number) {
     setCart((current) => current.map((item) => item.id === productId ? { ...item, qty: item.qty + delta } : item).filter((item) => item.qty > 0));
@@ -614,11 +756,15 @@ function CartDrawer({ cartOpen, setCartOpen, cart, setCart, company, zones, zone
                 <Select value={zoneId} onChange={(value) => { setZoneId(value); const manualZone = zones.find((zone) => zone.id === value); if (manualZone) setCheckout({ ...checkout, neighborhood: manualZone.neighborhood }); }}><option value="">Selecione o bairro</option>{zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.neighborhood} - {money(zone.fee)} - {zone.estimated_minutes} min</option>)}</Select>
                 {selectedZone && <span className="rounded-xl bg-white p-3 text-sm font-black text-startt-green">Frete para {selectedZone.neighborhood}: {money(selectedZone.fee)}</span>}
               </>}
+              {fulfillment === "pickup" && <div className="grid gap-2 rounded-xl border border-black/10 bg-white p-3"><span className="text-sm font-black text-startt-ink">Endereço do cliente</span><Input placeholder="Endereço para cadastro" value={checkout.address} onChange={(value) => setCheckout({ ...checkout, address: value })} /></div>}
               <div className="grid grid-cols-2 gap-2">
-                <Select value={checkout.payment_method} onChange={(value) => setCheckout({ ...checkout, payment_method: value as PaymentMethod })}><option>Pix</option><option>Cartão</option><option>Dinheiro</option></Select>
+                <Select value={checkout.payment_method} onChange={(value) => setCheckout({ ...checkout, payment_method: value as PaymentMethod })}><option>Pix</option><option>Cartão</option><option>Dinheiro</option><option>Vale alimentação/refeição</option></Select>
                 <Input placeholder="Cupom" value={checkout.coupon} onChange={(value) => setCheckout({ ...checkout, coupon: value })} />
               </div>
-              {checkout.payment_method === "Dinheiro" && <div className="grid gap-2 rounded-xl border border-black/10 bg-white p-3"><Input type="number" placeholder="Troco para quanto?" value={checkout.cash_change_for} onChange={(value) => setCheckout({ ...checkout, cash_change_for: value })} />{cashChangeFor > 0 && <span className="text-sm font-bold text-startt-muted">Troco para {money(cashChangeFor)} • Troco: {money(calculatedChange)}</span>}</div>}
+              {checkout.payment_method === "Dinheiro" && <div className="grid gap-2 rounded-xl border border-black/10 bg-white p-3"><span className="text-sm font-black text-startt-ink">Precisa de troco?</span><Select value={checkout.needs_change} onChange={(value) => setCheckout({ ...checkout, needs_change: value as "Não" | "Sim", cash_change_for: value === "Sim" ? checkout.cash_change_for : "" })}><option>Não</option><option>Sim</option></Select>{checkout.needs_change === "Sim" && <Input placeholder="Troco para quanto?" value={checkout.cash_change_for} onChange={(value) => setCheckout({ ...checkout, cash_change_for: value })} />}{checkout.needs_change === "Sim" && cashChangeFor > 0 && <span className="text-sm font-bold text-startt-muted">Troco para {money(cashChangeFor)} • Troco estimado: {money(calculatedChange)}</span>}</div>}
+              {checkout.payment_method === "Cartão" && <div className="grid gap-2 rounded-xl border border-black/10 bg-white p-3"><span className="text-sm font-black text-startt-ink">Tipo do cartão</span><Select value={checkout.card_type} onChange={(value) => setCheckout({ ...checkout, card_type: value as "Débito" | "Crédito" })}><option>Débito</option><option>Crédito</option></Select></div>}
+              {checkout.payment_method === "Vale alimentação/refeição" && <div className="grid gap-2 rounded-xl border border-black/10 bg-white p-3"><span className="text-sm font-black text-startt-ink">Marca do vale</span><Select value={checkout.voucher_brand_id} onChange={(value) => setCheckout({ ...checkout, voucher_brand_id: value })}><option value="">Selecione uma marca</option>{voucherBrands.map((brand) => <option key={brand.id} value={brand.id}>{brand.name}{brand.fee_percentage ? ` • ${brand.fee_percentage}%` : ""}</option>)}</Select>{!voucherBrands.length && <span className="text-xs font-bold text-startt-muted">Esta lancheria ainda não configurou marcas de vale ativas.</span>}</div>}
+              <textarea className="min-h-24 w-full rounded-xl border border-black/10 bg-white px-4 py-3 font-semibold outline-none transition focus:border-startt-green focus:ring-4 focus:ring-startt-green/10" placeholder="Observação do pedido (opcional)" value={checkout.customer_note} onChange={(event) => setCheckout({ ...checkout, customer_note: event.target.value })} />
             </section>
           </div>
         </div>
@@ -763,14 +909,14 @@ function AdminContent({ screen, db, setDbState, company, user }: { screen: Admin
   if (screen === "dashboard") return <Dashboard company={company} bundle={bundle} />;
   if (screen === "caixa") return <Cashier company={company} user={user} products={bundle.products.filter((item) => item.active)} setDbState={setDbState} />;
   if (screen === "pedidos") return <OrdersManager bundle={bundle} setDbState={setDbState} company={company} user={user} />;
-  if (screen === "clientes") return <CustomersManager company={company} customers={bundle.customers} setDbState={setDbState} />;
+  if (screen === "clientes") return <CustomersManager company={company} customers={bundle.customers} orders={bundle.orders} orderItems={bundle.order_items} setDbState={setDbState} />;
   if (screen === "produtos") return <ProductsManager company={company} products={bundle.products} categories={bundle.categories} plan={plan} setDbState={setDbState} />;
   if (screen === "categorias") return <CategoriesManager company={company} categories={bundle.categories} setDbState={setDbState} />;
   if (screen === "cupons") return <CouponsManager company={company} coupons={bundle.coupons} plan={plan} setDbState={setDbState} />;
   if (screen === "relatorios") return <Reports company={company} bundle={bundle} />;
   if (screen === "fretes") return <ZonesManager company={company} zones={bundle.delivery_zones} setDbState={setDbState} />;
   if (screen === "impressao") return <PrintManager company={company} settings={bundle.print_settings} setDbState={setDbState} />;
-  if (screen === "configuracoes") return <CompanySettings company={company} setDbState={setDbState} />;
+  if (screen === "configuracoes") return <CompanySettings company={company} voucherBrands={bundle.voucher_brands} setDbState={setDbState} />;
   return <UsersManager company={company} users={bundle.users} plan={plan} setDbState={setDbState} />;
 }
 
@@ -886,7 +1032,7 @@ function OrdersManager({ bundle, setDbState, company, user }: { bundle: ReturnTy
   const [status, setStatus] = useState("todos");
   const [search, setSearch] = useState("");
   const [date, setDate] = useState("");
-  const rows = bundle.orders.filter((order) => (status === "todos" || order.status === status) && (!date || order.created_at.slice(0, 10) === date) && customerName(order.customer_id, bundle.customers).toLowerCase().includes(search.toLowerCase()));
+  const rows = bundle.orders.filter((order) => (status === "todos" || order.status === status) && (!date || order.created_at.slice(0, 10) === date) && (order.customer_name || customerName(order.customer_id, bundle.customers)).toLowerCase().includes(search.toLowerCase()));
   function update(order: Order, next: OrderStatus) {
     setDbState((current) => ({ ...current, orders: current.orders.map((item) => item.id === order.id && item.company_id === company.id ? { ...item, status: next } : item) }));
     notify("success", "Status do pedido atualizado.");
@@ -903,20 +1049,21 @@ function OrdersManager({ bundle, setDbState, company, user }: { bundle: ReturnTy
   return (
     <CrudShell title="Pedidos" description="Pedidos recebidos do cardápio online.">
       <div className="grid gap-3 md:grid-cols-3"><Input placeholder="Buscar cliente" value={search} onChange={setSearch} /><Input placeholder="" type="date" value={date} onChange={setDate} /><Select value={status} onChange={setStatus}><option value="todos">Todos</option>{orderStatuses.map((item) => <option key={item}>{item}</option>)}</Select></div>
-      <Table headers={["Pedido", "Cliente", "Status", "Total", "Ações"]} rows={rows.map((order) => [`#${displayOrderNumber(order)}`, customerName(order.customer_id, bundle.customers), order.status, money(order.total), <div className="flex flex-wrap gap-2" key={order.id}><Select value={order.status} onChange={(value) => update(order, value as OrderStatus)}>{orderStatuses.map((item) => <option key={item}>{item}</option>)}</Select><button className="rounded-lg border px-3 font-bold" onClick={() => printOrder(company, order, bundle)}>Imprimir</button><button className="rounded-lg border px-3 font-bold" onClick={() => sendOrderUpdate(order, customerName(order.customer_id, bundle.customers), company)}>WhatsApp</button>{["dono", "gerente"].includes(user.role) && <button className="rounded-lg bg-startt-red px-3 py-2 font-bold text-white" onClick={() => remove(order)}>Excluir</button>}</div>])} />
+      <Table headers={["Pedido", "Cliente", "Pagamento", "Status", "Total", "Ações"]} rows={rows.map((order) => [`#${displayOrderNumber(order)}`, order.customer_name || customerName(order.customer_id, bundle.customers), order.payment_details || order.payment_method, order.status, money(order.total), <div className="flex flex-wrap gap-2" key={order.id}><Select value={order.status} onChange={(value) => update(order, value as OrderStatus)}>{orderStatuses.map((item) => <option key={item}>{item}</option>)}</Select><button className="rounded-lg border px-3 font-bold" onClick={() => printOrder(company, order, bundle)}>Imprimir</button><button className="rounded-lg border px-3 font-bold" onClick={() => sendOrderUpdate(order, company, bundle)}>WhatsApp</button>{["dono", "gerente"].includes(user.role) && <button className="rounded-lg bg-startt-red px-3 py-2 font-bold text-white" onClick={() => remove(order)}>Excluir</button>}</div>])} />
     </CrudShell>
   );
 }
 
 function printOrder(company: Company, order: Order, bundle: ReturnType<DatabaseApi["getCompanyBundle"]>) {
   const items = bundle.order_items.filter((item) => item.order_id === order.id);
-  const rows = items.map((item) => `<tr><td>${item.quantity}x ${item.name}</td><td>${money(item.total)}</td></tr>`).join("");
-  const change = order.payment_method === "Dinheiro" && order.cash_change_for ? `<p>Troco para: ${money(order.cash_change_for)}</p><p>Troco: ${money(order.calculated_change || 0)}</p>` : "";
-  openPrintable("Pedido", `<h1>${company.name}</h1><p><strong>Pedido:</strong> #${displayOrderNumber(order)}</p><p><strong>Cliente:</strong> ${customerName(order.customer_id, bundle.customers)}</p><p><strong>Status:</strong> ${order.status}</p><table><tr><th>Item</th><th>Total</th></tr>${rows || "<tr><td colspan='2'>Itens não informados</td></tr>"}</table><p>Subtotal: ${money(order.subtotal)}</p><p>Entrega: ${money(order.delivery_fee)}</p>${change}<h2>Total: ${money(order.total)}</h2><p class="signature">Startt Delivery — produzido por Startt Facilities</p>`);
+  const customer = bundle.customers.find((item) => item.id === order.customer_id);
+  openPrintable("Pedido", buildOrderNoteHtml(company, { ...order, customer_name: order.customer_name || customer?.name, customer_phone: order.customer_phone || customer?.phone, customer_address: order.customer_address || customer?.address }, items));
 }
 
-function sendOrderUpdate(order: Order, customer: string, company: Company) {
-  const message = [`${company.name}`, `Pedido: #${displayOrderNumber(order)}`, `Cliente: ${customer}`, `Status atual: ${order.status}`, `Total: ${money(order.total)}`, order.payment_method === "Dinheiro" && order.cash_change_for ? `Troco para: ${money(order.cash_change_for)} | Troco: ${money(order.calculated_change || 0)}` : ""].filter(Boolean).join("\n");
+function sendOrderUpdate(order: Order, company: Company, bundle: ReturnType<DatabaseApi["getCompanyBundle"]>) {
+  const customer = bundle.customers.find((item) => item.id === order.customer_id);
+  const items = bundle.order_items.filter((item) => item.order_id === order.id);
+  const message = buildOrderNote(company, { ...order, customer_name: order.customer_name || customer?.name, customer_phone: order.customer_phone || customer?.phone, customer_address: order.customer_address || customer?.address }, items);
   window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank");
   notify("success", "Mensagem de atualização preparada para WhatsApp.");
 }
@@ -997,14 +1144,125 @@ function CategoriesManager({ company, categories, setDbState }: { company: Compa
   return <CrudShell title="Categorias" description="Cadastrar, editar ordem e ativar/desativar categorias."><div className="flex justify-end"><button onClick={() => setFormOpen(true)} className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-startt-green px-4 font-black text-white shadow-lg shadow-startt-green/20"><Plus size={18} /> Nova categoria</button></div><FormDrawer open={formOpen} title="Nova categoria" description="Crie uma seção organizada para o cardápio público." onClose={() => setFormOpen(false)}><div className="grid gap-4"><Input value={name} onChange={setName} placeholder="Nome da categoria" /><button onClick={add} className="min-h-12 rounded-xl bg-startt-green px-4 font-black text-white">Cadastrar categoria</button></div></FormDrawer><Table headers={["Nome", "Ordem", "Status", "Ações"]} rows={categories.map((category) => [<Input key={category.id} value={category.name} placeholder="Categoria" onChange={(value) => setDbState((current) => ({ ...current, categories: current.categories.map((item) => item.id === category.id ? { ...item, name: value } : item) }))} />, String(category.sort_order), category.active ? "Ativa" : "Inativa", <div key={category.id} className="flex gap-2"><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => toggle(category)}>Ativar/desativar</button><button className="rounded-xl bg-startt-red px-3 py-2 font-bold text-white" onClick={() => remove(category)}>Excluir</button></div>])} /></CrudShell>;
 }
 
-function CustomersManager({ company, customers, setDbState }: { company: Company; customers: Customer[]; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
+function CustomersManager({ company, customers, orders, orderItems, setDbState }: { company: Company; customers: Customer[]; orders: Order[]; orderItems: OrderItem[]; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
   const blank = { id: "", name: "", phone: "", address: "" };
   const [form, setForm] = useState(blank);
   const [formOpen, setFormOpen] = useState(false);
-  function save(event: React.FormEvent) { event.preventDefault(); const customer: Customer = { id: form.id || id("cus"), company_id: company.id, name: form.name, phone: form.phone, address: form.address, total_spent: 0, last_order_at: "", created_at: new Date().toISOString() }; setDbState((current) => ({ ...current, customers: form.id ? current.customers.map((item) => item.id === form.id && item.company_id === company.id ? { ...item, ...customer, total_spent: item.total_spent, last_order_at: item.last_order_at } : item) : [customer, ...current.customers] })); setForm(blank); setFormOpen(false); notify("success", "Cliente salvo com sucesso."); }
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<Customer | null>(null);
+  const visible = customers.filter((customer) => `${customer.name} ${customer.phone} ${customer.address}`.toLowerCase().includes(search.toLowerCase()));
+  function stats(customer: Customer) {
+    const history = orders.filter((order) => order.customer_id === customer.id || (order.normalized_phone && order.normalized_phone === customer.normalized_phone)).sort((a, b) => b.created_at.localeCompare(a.created_at));
+    const totalOrders = customer.total_orders || history.length;
+    const totalSpent = customer.total_spent || history.reduce((sum, order) => sum + order.total, 0);
+    return { history, totalOrders, totalSpent, average: totalSpent / Math.max(1, totalOrders), last: customer.last_order_at || history[0]?.created_at || "" };
+  }
+  function save(event: React.FormEvent) {
+    event.preventDefault();
+    const normalized_phone = normalizePhone(form.phone);
+    if (!form.name.trim() || normalized_phone.length < 10) {
+      notify("error", "Informe nome e telefone com DDD.");
+      return;
+    }
+    const createdAt = new Date().toISOString();
+    const customer: Customer = { id: form.id || id("cus"), company_id: company.id, name: form.name.trim(), phone: form.phone.trim(), normalized_phone, address: form.address.trim(), total_orders: 0, total_spent: 0, last_order_at: "", created_at: createdAt, updated_at: createdAt };
+    setDbState((current) => ({ ...current, customers: form.id ? current.customers.map((item) => item.id === form.id && item.company_id === company.id ? { ...item, ...customer, total_orders: item.total_orders || 0, total_spent: item.total_spent || 0, last_order_at: item.last_order_at, created_at: item.created_at, updated_at: createdAt } : item) : [customer, ...current.customers] }));
+    setForm(blank);
+    setFormOpen(false);
+    notify("success", "Cliente salvo com sucesso.");
+  }
   function create() { setForm(blank); setFormOpen(true); }
   function edit(customer: Customer) { setForm({ id: customer.id, name: customer.name, phone: customer.phone, address: customer.address }); setFormOpen(true); }
-  return <CrudShell title="Clientes" description="Cadastro manual, edição, exclusão e histórico."><div className="flex justify-end"><button onClick={create} className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-startt-green px-4 font-black text-white shadow-lg shadow-startt-green/20"><Plus size={18} /> Novo cliente</button></div><FormDrawer open={formOpen} title={form.id ? "Editar cliente" : "Novo cliente"} description="Mantenha contatos e endereço para atendimento recorrente." onClose={() => setFormOpen(false)}><form onSubmit={save} className="grid gap-3"><Input placeholder="Nome" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><Input placeholder="Telefone" value={form.phone} onChange={(value) => setForm({ ...form, phone: value })} /><Input placeholder="Endereço" value={form.address} onChange={(value) => setForm({ ...form, address: value })} /><button className="min-h-12 rounded-xl bg-startt-green px-4 font-black text-white">{form.id ? "Salvar alterações" : "Cadastrar cliente"}</button></form></FormDrawer><Table headers={["Cliente", "Telefone", "Endereço", "Total gasto", "Último pedido", "Ações"]} rows={customers.map((customer) => [customer.name, customer.phone, customer.address, money(customer.total_spent), customer.last_order_at ? customer.last_order_at.slice(0, 10) : "-", <Actions key={customer.id} onEdit={() => edit(customer)} onDelete={() => confirm("Excluir cliente?") && setDbState((current) => ({ ...current, customers: current.customers.filter((item) => !(item.id === customer.id && item.company_id === company.id)) }))} />])} /></CrudShell>;
+  function reactivationLink(customer: Customer) {
+    const message = `Oi, ${customer.name}!\nAqui é da ${company.name}.\nVimos que faz um tempinho que você não pede com a gente.\nHoje estamos atendendo normalmente e temos várias opções saindo quentinhas.\nQuer que eu te mande o cardápio?\n\n${window.location.origin}/${company.slug}`;
+    return `https://wa.me/${whatsappPhone(customer.normalized_phone || customer.phone)}?text=${encodeURIComponent(message)}`;
+  }
+  return (
+    <CrudShell title="CRM de Clientes" description="Cadastro inteligente, histórico de pedidos e recompra por WhatsApp.">
+      <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+        <Input placeholder="Buscar por nome, telefone ou endereço" value={search} onChange={setSearch} />
+        <button onClick={create} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-startt-green px-4 font-black text-white shadow-lg shadow-startt-green/20"><Plus size={18} /> Novo cliente</button>
+      </div>
+      <FormDrawer open={formOpen} title={form.id ? "Editar cliente" : "Novo cliente"} description="Telefone com DDD é a chave única dentro desta lancheria." onClose={() => setFormOpen(false)}>
+        <form onSubmit={save} className="grid gap-3">
+          <Input placeholder="Nome" value={form.name} onChange={(value) => setForm({ ...form, name: value })} />
+          <Input placeholder="Telefone com DDD" value={form.phone} onChange={(value) => setForm({ ...form, phone: value })} />
+          <Input placeholder="Endereço mais usado" value={form.address} onChange={(value) => setForm({ ...form, address: value })} />
+          <button className="min-h-12 rounded-xl bg-startt-green px-4 font-black text-white">{form.id ? "Salvar alterações" : "Cadastrar cliente"}</button>
+        </form>
+      </FormDrawer>
+      <div className="grid gap-3 lg:grid-cols-2">
+        {visible.map((customer) => {
+          const customerStats = stats(customer);
+          return (
+            <article key={customer.id} className="rounded-3xl border border-black/10 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-card">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <strong className="block truncate text-lg">{customer.name}</strong>
+                  <span className="text-sm font-bold text-startt-muted">{customer.phone}</span>
+                  <p className="mt-2 line-clamp-2 text-sm text-startt-muted">{customer.address || "Endereço ainda não informado"}</p>
+                </div>
+                <span className="rounded-full bg-startt-green/10 px-3 py-1 text-xs font-black text-startt-green">{customerStats.totalOrders} pedidos</span>
+              </div>
+              <div className="mt-4 grid grid-cols-3 gap-2 text-sm">
+                <div className="rounded-2xl bg-startt-paper p-3"><span className="block text-xs font-bold text-startt-muted">Total gasto</span><b>{money(customerStats.totalSpent)}</b></div>
+                <div className="rounded-2xl bg-startt-paper p-3"><span className="block text-xs font-bold text-startt-muted">Ticket médio</span><b>{money(customerStats.average)}</b></div>
+                <div className="rounded-2xl bg-startt-paper p-3"><span className="block text-xs font-bold text-startt-muted">Último pedido</span><b>{customerStats.last ? customerStats.last.slice(0, 10) : "-"}</b></div>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <a href={reactivationLink(customer)} target="_blank" className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-startt-green px-3 text-sm font-black text-white"><MessageCircle size={16} /> WhatsApp</a>
+                <button onClick={() => setSelected(customer)} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-black/10 bg-white px-3 text-sm font-black"><FileText size={16} /> Ver histórico</button>
+                <button onClick={() => edit(customer)} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-black/10 bg-white px-3 text-sm font-black"><Settings size={16} /> Editar</button>
+              </div>
+            </article>
+          );
+        })}
+        {!visible.length && <Empty text="Nenhum cliente encontrado." />}
+      </div>
+      <CustomerHistoryDrawer open={Boolean(selected)} customer={selected} company={company} stats={selected ? stats(selected) : undefined} orderItems={orderItems} reactivationLink={selected ? reactivationLink(selected) : ""} onClose={() => setSelected(null)} />
+    </CrudShell>
+  );
+}
+
+function CustomerHistoryDrawer({ open, customer, company, stats, orderItems, reactivationLink, onClose }: { open: boolean; customer: Customer | null; company: Company; stats?: { history: Order[]; totalOrders: number; totalSpent: number; average: number; last: string }; orderItems: OrderItem[]; reactivationLink: string; onClose: () => void }) {
+  return (
+    <FormDrawer open={open} title={customer ? customer.name : "Cliente"} description="Histórico completo do relacionamento e pedidos." onClose={onClose}>
+      {customer && stats && (
+        <div className="grid gap-4">
+          <div className="rounded-3xl bg-startt-paper p-4">
+            <p className="font-black">{customer.phone}</p>
+            <p className="mt-1 text-sm text-startt-muted">{customer.address || "Endereço não informado"}</p>
+            <p className="mt-3 text-xs font-bold text-startt-muted">Cadastro: {customer.created_at ? customer.created_at.slice(0, 10) : "-"}</p>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Metric label="Pedidos" value={String(stats.totalOrders)} icon={<ClipboardList />} />
+            <Metric label="Total gasto" value={money(stats.totalSpent)} icon={<CreditCard />} />
+            <Metric label="Ticket médio" value={money(stats.average)} icon={<FileText />} />
+            <Metric label="Último pedido" value={stats.last ? stats.last.slice(0, 10) : "-"} icon={<Bell />} />
+          </div>
+          <a href={reactivationLink} target="_blank" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-startt-green px-4 font-black text-white"><MessageCircle size={18} /> Chamar no WhatsApp</a>
+          <div className="grid gap-3">
+            <h3 className="text-sm font-black uppercase text-startt-muted">Últimos pedidos</h3>
+            {stats.history.map((order) => {
+              const items = orderItems.filter((item) => item.order_id === order.id);
+              return (
+                <article key={order.id} className="rounded-2xl border border-black/10 bg-white p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <strong>#{displayOrderNumber(order)}</strong>
+                    <span className="rounded-full bg-startt-paper px-3 py-1 text-xs font-black">{order.status}</span>
+                  </div>
+                  <p className="mt-1 text-sm text-startt-muted">{order.created_at.slice(0, 10)} • {order.payment_details || order.payment_method}</p>
+                  <div className="mt-3 grid gap-1 text-sm">{items.map((item) => <span key={item.id}>{item.quantity}x {item.name}</span>)}</div>
+                  <b className="mt-3 block">{money(order.total)}</b>
+                </article>
+              );
+            })}
+            {!stats.history.length && <Empty text="Este cliente ainda não possui histórico de pedidos." />}
+          </div>
+        </div>
+      )}
+    </FormDrawer>
+  );
 }
 
 function CouponsManager({ company, coupons, plan, setDbState }: { company: Company; coupons: Coupon[]; plan?: Plan; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
@@ -1041,9 +1299,10 @@ function PrintManager({ company, settings, setDbState }: { company: Company; set
   return <CrudShell title="Impressão" description="Modo normal usa window.print(). Futuro modo avançado pode usar QZ Tray."><div className="grid gap-3 rounded-lg border border-black/10 bg-white p-4 md:grid-cols-2"><label className="flex gap-2 font-bold"><input type="checkbox" checked={form.auto_print_orders} onChange={(e) => setForm({ ...form, auto_print_orders: e.target.checked })} /> Imprimir novos pedidos</label><label className="flex gap-2 font-bold"><input type="checkbox" checked={form.auto_print_cash_sales} onChange={(e) => setForm({ ...form, auto_print_cash_sales: e.target.checked })} /> Imprimir vendas do caixa</label><Input placeholder="Nome da impressora" value={form.printer_name} onChange={(value) => setForm({ ...form, printer_name: value })} /><Select value={form.paper_width} onChange={(value) => setForm({ ...form, paper_width: value as "58mm" | "80mm" })}><option>58mm</option><option>80mm</option></Select><Input placeholder="Quantidade de vias" value={String(form.copies)} onChange={(value) => setForm({ ...form, copies: Number(value) || 1 })} /><Input placeholder="Rodapé" value={form.footer_text} onChange={(value) => setForm({ ...form, footer_text: value })} /><button onClick={save} className="rounded-lg bg-startt-green px-4 py-3 font-black text-white">Salvar configuração</button><button onClick={() => openPrintable("Teste de impressão", `<h1>${company.name}</h1><p>Teste ${form.paper_width}</p><p>${form.footer_text}</p>`)} className="rounded-lg border border-black/10 bg-white px-4 py-3 font-black">Testar impressão</button></div></CrudShell>;
 }
 
-function CompanySettings({ company, setDbState }: { company: Company; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
+function CompanySettings({ company, voucherBrands, setDbState }: { company: Company; voucherBrands: VoucherBrand[]; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
   const [form, setForm] = useState(company);
   const [saving, setSaving] = useState(false);
+  const [voucherForm, setVoucherForm] = useState({ id: "", name: "", fee_percentage: "", active: true });
   const defaultHour = company.opening_hours.match(/\d{1,2}:\d{2}[- às]+\d{1,2}:?\d{0,2}/)?.[0]?.replace(" às ", "-") || "18:00-23:00";
   const [hours, setHours] = useState(() => weekDays.map((day) => ({ day, active: company.is_open, time: defaultHour })));
   function openingHoursSummary() {
@@ -1055,6 +1314,17 @@ function CompanySettings({ company, setDbState }: { company: Company; setDbState
     return active.map((item) => `${item.day.slice(0, 3)} ${item.time}`).join(" • ");
   }
   function save() { if (saving) return; const opening_hours = openingHoursSummary(); runSave(setSaving, () => setDbState((current) => ({ ...current, companies: current.companies.map((item) => item.id === company.id ? { ...form, opening_hours, is_open: hours.some((hour) => hour.active), hero_image: form.banner_url || form.hero_image } : item) })), "Configurações salvas com sucesso."); }
+  function saveVoucher(event: React.FormEvent) {
+    event.preventDefault();
+    if (!voucherForm.name.trim()) {
+      notify("error", "Informe o nome da marca do vale.");
+      return;
+    }
+    const brand: VoucherBrand = { id: voucherForm.id || id("vou"), company_id: company.id, name: voucherForm.name.trim(), fee_percentage: parseMoney(voucherForm.fee_percentage) || 0, active: voucherForm.active };
+    setDbState((current) => ({ ...current, voucher_brands: voucherForm.id ? current.voucher_brands.map((item) => item.id === voucherForm.id && item.company_id === company.id ? brand : item) : [brand, ...current.voucher_brands] }));
+    setVoucherForm({ id: "", name: "", fee_percentage: "", active: true });
+    notify("success", "Marca de vale salva com sucesso.");
+  }
   return (
     <CrudShell title="Configurações" description="Essas configs alteram o cardápio público da empresa.">
       <div className="grid gap-5 rounded-2xl border border-black/10 bg-white p-4 shadow-card">
@@ -1078,6 +1348,30 @@ function CompanySettings({ company, setDbState }: { company: Company; setDbState
             {hours.map((item, index) => <div key={item.day} className="grid gap-2 rounded-2xl bg-startt-paper p-3 sm:grid-cols-[120px_auto_1fr] sm:items-center"><strong>{item.day}</strong><label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={item.active} onChange={(event) => setHours((current) => current.map((hour, i) => i === index ? { ...hour, active: event.target.checked } : hour))} /> Aberto</label><Input placeholder="18:00-23:00" value={item.time} onChange={(value) => setHours((current) => current.map((hour, i) => i === index ? { ...hour, time: value } : hour))} /></div>)}
           </div>
           <span className="rounded-xl bg-startt-rose p-3 text-sm font-bold text-startt-green">{openingHoursSummary()}</span>
+        </section>
+        <section className="grid gap-3 rounded-2xl border border-black/10 bg-white p-4">
+          <div>
+            <h3 className="text-lg font-black">Vales alimentação/refeição</h3>
+            <p className="text-sm text-startt-muted">Configure as marcas que aparecem no checkout público e registre a taxa de cada uma.</p>
+          </div>
+          <form onSubmit={saveVoucher} className="grid gap-3 md:grid-cols-[1fr_160px_auto_auto] md:items-center">
+            <Input placeholder="Marca: Alelo, Sodexo, VR..." value={voucherForm.name} onChange={(value) => setVoucherForm({ ...voucherForm, name: value })} />
+            <Input placeholder="Taxa %" value={voucherForm.fee_percentage} onChange={(value) => setVoucherForm({ ...voucherForm, fee_percentage: value })} />
+            <label className="flex min-h-12 items-center gap-2 rounded-xl bg-startt-paper px-3 font-bold"><input type="checkbox" checked={voucherForm.active} onChange={(event) => setVoucherForm({ ...voucherForm, active: event.target.checked })} /> Ativo</label>
+            <button className="min-h-12 rounded-xl bg-startt-green px-4 font-black text-white">{voucherForm.id ? "Salvar" : "Adicionar"}</button>
+          </form>
+          <div className="grid gap-2">
+            {voucherBrands.map((brand) => (
+              <div key={brand.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-startt-paper p-3">
+                <div><strong>{brand.name}</strong><p className="text-sm text-startt-muted">Taxa: {brand.fee_percentage || 0}% • {brand.active ? "Ativo" : "Inativo"}</p></div>
+                <div className="flex gap-2">
+                  <button className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-black" onClick={() => setVoucherForm({ id: brand.id, name: brand.name, fee_percentage: String(brand.fee_percentage || ""), active: brand.active })}>Editar</button>
+                  <button className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-black" onClick={() => setDbState((current) => ({ ...current, voucher_brands: current.voucher_brands.map((item) => item.id === brand.id && item.company_id === company.id ? { ...item, active: !item.active } : item) }))}>Ativar/desativar</button>
+                </div>
+              </div>
+            ))}
+            {!voucherBrands.length && <Empty text="Nenhuma marca de vale configurada." />}
+          </div>
         </section>
         <div className="flex flex-wrap gap-4 rounded-2xl bg-startt-paper p-4">
           <label className="flex gap-2 font-bold"><input type="checkbox" checked={form.is_open} onChange={(e) => setForm({ ...form, is_open: e.target.checked })} /> Aberto</label>
@@ -1151,7 +1445,7 @@ function MasterCompanies({ db, setDbState }: { db: DatabaseApi; setDbState: Reac
     notify("success", form.id ? "Empresa atualizada com sucesso." : "Empresa criada com sucesso.");
   }
   function updateCompany(companyId: string, patch: Partial<Company>) { setDbState((current) => ({ ...current, companies: current.companies.map((company) => company.id === companyId ? { ...company, ...patch } : company) })); notify("success", "Empresa atualizada."); }
-  function deleteCompany(company: Company) { if (!confirm(`Excluir ${company.name} e TODOS os dados vinculados?`)) return; setDbState((current) => ({ ...current, companies: current.companies.filter((item) => item.id !== company.id), users: current.users.filter((item) => item.company_id !== company.id), categories: current.categories.filter((item) => item.company_id !== company.id), products: current.products.filter((item) => item.company_id !== company.id), orders: current.orders.filter((item) => item.company_id !== company.id), order_items: current.order_items.filter((item) => item.company_id !== company.id), customers: current.customers.filter((item) => item.company_id !== company.id), delivery_zones: current.delivery_zones.filter((item) => item.company_id !== company.id), coupons: current.coupons.filter((item) => item.company_id !== company.id), settings: current.settings.filter((item) => item.company_id !== company.id), cash_sales: current.cash_sales.filter((item) => item.company_id !== company.id), print_settings: current.print_settings.filter((item) => item.company_id !== company.id), reports: current.reports.filter((item) => item.company_id !== company.id) })); notify("success", "Empresa e dados vinculados foram excluídos."); }
+  function deleteCompany(company: Company) { if (!confirm(`Excluir ${company.name} e TODOS os dados vinculados?`)) return; setDbState((current) => ({ ...current, companies: current.companies.filter((item) => item.id !== company.id), users: current.users.filter((item) => item.company_id !== company.id), categories: current.categories.filter((item) => item.company_id !== company.id), products: current.products.filter((item) => item.company_id !== company.id), orders: current.orders.filter((item) => item.company_id !== company.id), order_items: current.order_items.filter((item) => item.company_id !== company.id), customers: current.customers.filter((item) => item.company_id !== company.id), voucher_brands: current.voucher_brands.filter((item) => item.company_id !== company.id), delivery_zones: current.delivery_zones.filter((item) => item.company_id !== company.id), coupons: current.coupons.filter((item) => item.company_id !== company.id), settings: current.settings.filter((item) => item.company_id !== company.id), cash_sales: current.cash_sales.filter((item) => item.company_id !== company.id), print_settings: current.print_settings.filter((item) => item.company_id !== company.id), reports: current.reports.filter((item) => item.company_id !== company.id) })); notify("success", "Empresa e dados vinculados foram excluídos."); }
   return <CrudShell title="Empresas" description="CRUD completo, controle de acesso e financeiro por empresa."><div className="flex flex-wrap justify-end gap-2"><button onClick={startCreate} className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-startt-green px-4 font-black text-white shadow-lg shadow-startt-green/20"><Plus size={18} /> Nova empresa</button></div><FormDrawer open={formOpen} title={form.id ? "Editar empresa" : "Nova empresa"} description="Controle dados comerciais, plano, assinatura e usuário inicial da lancheria." onClose={() => setFormOpen(false)}><form onSubmit={saveCompany} className="grid gap-3"><div className="grid gap-3 sm:grid-cols-2"><Input placeholder="Nome" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><Input placeholder="Slug" value={form.slug} onChange={(value) => setForm({ ...form, slug: value })} /><Input placeholder="WhatsApp" value={form.whatsapp} onChange={(value) => setForm({ ...form, whatsapp: value })} /><Input placeholder="Endereço" value={form.address} onChange={(value) => setForm({ ...form, address: value })} /><Select value={form.status} onChange={(value) => setForm({ ...form, status: value as CompanyStatus })}><option>trial</option><option>active</option><option>blocked</option><option>canceled</option></Select><Select value={form.plan_id} onChange={(value) => { const plan = selectedPlan(value); setForm({ ...form, plan_id: value, monthly_price: String(plan?.monthly_price || form.monthly_price) }); }}>{db.plans.filter((plan) => plan.is_active || plan.id === form.plan_id).map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</Select><Input placeholder="Cor principal" value={form.primary_color} onChange={(value) => setForm({ ...form, primary_color: value })} /><Input placeholder="Valor mensal" value={form.monthly_price} onChange={(value) => setForm({ ...form, monthly_price: value })} /><Input placeholder="Dia vencimento" value={form.due_day} onChange={(value) => setForm({ ...form, due_day: value })} /><Input type="date" placeholder="Próxima data" value={form.next_due_date} onChange={(value) => setForm({ ...form, next_due_date: value })} /><Select value={form.subscription_status} onChange={(value) => setForm({ ...form, subscription_status: value as SubscriptionStatus })}><option>trialing</option><option>active</option><option>overdue</option><option>canceled</option></Select><Input placeholder="Admin inicial opcional" value={form.admin_email} onChange={(value) => setForm({ ...form, admin_email: value })} /></div><Input placeholder="Observações financeiras" value={form.payment_notes} onChange={(value) => setForm({ ...form, payment_notes: value })} /><label className="flex items-center gap-2 rounded-2xl bg-startt-paper p-4 font-bold"><input type="checkbox" checked={form.is_registration_enabled} onChange={(event) => setForm({ ...form, is_registration_enabled: event.target.checked })} /> Cadastro/acesso habilitado</label><button className="min-h-12 rounded-xl bg-startt-green px-4 font-black text-white shadow-lg shadow-startt-green/20">{form.id ? "Salvar alterações" : "Criar empresa"}</button></form></FormDrawer><Table headers={["Empresa", "Slug", "Plano", "Assinatura", "Mensal", "Vencimento", "Ações"]} rows={db.companies.map((company) => [company.name, `/${company.slug}`, db.plans.find((plan) => plan.id === company.plan_id)?.name || company.plan, company.subscription_status, money(company.monthly_price), `${company.due_day} • ${company.next_due_date}`, <div key={company.id} className="flex flex-wrap gap-2"><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => startEdit(company)}>Editar</button><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { status: company.status === "blocked" ? "active" : "blocked" })}>{company.status === "blocked" ? "Desbloquear" : "Bloquear"}</button><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { subscription_status: "active", status: company.status === "blocked" ? "active" : company.status, last_payment_date: todayInput(), payment_notes: "Marcado como pago pelo Master." })}>Marcar pago</button><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { subscription_status: "overdue", payment_notes: "Marcado como inadimplente pelo Master." })}>Inadimplente</button><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { status: "canceled", subscription_status: "canceled" })}>Cancelar</button><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { status: "active", subscription_status: "active" })}>Reativar</button><a className="rounded-xl border px-3 py-2 font-bold" href={`/${company.slug}/admin`}>Simular</a><button className="rounded-xl bg-startt-red px-3 py-2 font-bold text-white" onClick={() => deleteCompany(company)}>Excluir</button></div>])} /></CrudShell>;
 }
 
