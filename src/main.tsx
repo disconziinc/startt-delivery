@@ -393,7 +393,7 @@ function AppHeader({ company }: { company?: Company }) {
     <header className="sticky top-0 z-30 border-b border-black/10 bg-startt-paper/90 px-4 py-3 backdrop-blur-xl">
       <div className="mx-auto flex w-[min(1280px,100%)] items-center justify-between gap-4">
         <a href="/" className="flex items-center gap-3">
-          {company?.logo_url ? <img className="h-11 w-11 rounded-lg object-cover" src={company.logo_url} alt={company.name} onError={(event) => { event.currentTarget.style.display = "none"; }} /> : <span className="grid h-11 w-11 place-items-center rounded-lg bg-startt-green text-2xl font-black text-white">S</span>}
+          {company?.logo_url ? <img className="h-11 w-11 rounded-lg object-cover" src={company.logo_url} alt={company.name} onError={(event) => { event.currentTarget.style.display = "none"; }} /> : <img className="h-11 w-11 rounded-lg object-cover" src="/favicon-16x16.png" alt="Startt Delivery" />}
           <span>
             <strong className="block leading-tight">{company?.name || "Startt Delivery"}</strong>
             <small className="block text-startt-muted">Produzido por: Startt Facilities</small>
