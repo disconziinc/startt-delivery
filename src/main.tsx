@@ -517,16 +517,20 @@ function InstitutionalLanding() {
         </div>
       </section>
 
-      <section id="sobre" className="px-4 py-16">
-        <div className="mx-auto grid w-[min(1180px,100%)] items-center gap-8 lg:grid-cols-[.82fr_1.18fr]">
-          <img className="h-[520px] w-full rounded-[2rem] object-cover object-[50%_24%] shadow-2xl shadow-black/40" src="/paulo-disconzi.jpeg" alt="Paulo Disconzi" />
-          <div className="grid gap-5 text-white/70">
-            <span className="text-sm font-semibold uppercase text-[#FF6A00]">Sobre nós</span>
-            <h2 className="text-3xl font-semibold text-white md:text-5xl">Startt Delivery, por Startt Facilities.</h2>
-            <p>O Startt Delivery nasceu dentro do ecossistema Startt Facilities com o objetivo de oferecer uma solução moderna, acessível e completa para lancherias que desejam profissionalizar sua presença digital.</p>
-            <p>Idealizado por Paulo Disconzi, em Porto Alegre-RS, o sistema foi desenvolvido para atender negócios que precisam de mais autonomia, organização e identidade própria no atendimento online.</p>
-            <p>A proposta é simples: permitir que cada lancheria tenha seu próprio cardápio digital, receba pedidos diretamente pelo WhatsApp e ofereça uma experiência mais rápida, humana e profissional para seus clientes.</p>
-            <p>Mais do que uma ferramenta, o Startt Delivery foi criado para ajudar pequenos negócios a venderem melhor, fortalecerem sua marca e terem mais controle sobre seus pedidos e clientes.</p>
+      <section id="sobre" className="px-4 py-20 md:py-28">
+        <div className="mx-auto grid w-[min(1180px,100%)] items-center gap-10 lg:grid-cols-[1.04fr_.96fr] lg:gap-16">
+          <div className="grid gap-5 text-white/68">
+            <span className="text-sm font-semibold uppercase tracking-normal text-[#FF6A00]">Sobre nós</span>
+            <h2 className="max-w-2xl text-3xl font-semibold leading-tight text-white md:text-5xl">Startt Delivery, por Startt Facilities.</h2>
+            <div className="grid max-w-2xl gap-4 text-base leading-8">
+              <p>O Startt Delivery nasceu dentro do ecossistema Startt Facilities com o objetivo de oferecer uma solução moderna, acessível e completa para lancherias que desejam profissionalizar sua presença digital.</p>
+              <p>Idealizado por Paulo Disconzi, em Porto Alegre-RS, o sistema foi desenvolvido para atender negócios que precisam de mais autonomia, organização e identidade própria no atendimento online.</p>
+              <p>A proposta é simples: permitir que cada lancheria tenha seu próprio cardápio digital, receba pedidos diretamente pelo WhatsApp e ofereça uma experiência mais rápida, humana e profissional para seus clientes.</p>
+              <p>Mais do que uma ferramenta, o Startt Delivery foi criado para ajudar pequenos negócios a venderem melhor, fortalecerem sua marca e terem mais controle sobre seus pedidos e clientes.</p>
+            </div>
+          </div>
+          <div className="mx-auto w-full max-w-[460px] rounded-[2rem] border border-white/10 bg-white/[.045] p-2.5 shadow-2xl shadow-black/30 lg:max-w-none">
+            <img className="aspect-[4/5] w-full rounded-[1.55rem] object-cover object-[50%_18%] shadow-[0_24px_80px_-48px_rgba(255,106,0,.45)]" src="/paulo-disconzi.jpeg" alt="Paulo Disconzi" />
           </div>
         </div>
       </section>
