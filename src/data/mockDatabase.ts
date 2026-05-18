@@ -1,4 +1,4 @@
-export type ID = string;
+﻿export type ID = string;
 
 export type CompanyStatus = "trial" | "active" | "blocked" | "canceled" | "disabled";
 export type SubscriptionStatus = "trialing" | "active" | "overdue" | "canceled";
@@ -121,6 +121,8 @@ export type VoucherBrand = {
   name: string;
   fee_percentage: number;
   active: boolean;
+  created_at: string;
+  updated_at: string;
 };
 
 export type DeliveryZone = {
@@ -252,7 +254,7 @@ const now = "2026-04-26T12:00:00.000Z";
 const yesterday = "2026-04-25T12:00:00.000Z";
 const monthStart = "2026-04-01T12:00:00.000Z";
 const portoAlegreNeighborhoods = [
-  "Aberta dos Morros", "Agronomia", "Anchieta", "Arquipélago", "Auxiliadora", "Azenha", "Bela Vista", "Belém Novo", "Belém Velho", "Boa Vista", "Boa Vista do Sul", "Bom Fim", "Bom Jesus", "Camaquã", "Campo Novo", "Cascata", "Cavalhada", "Centro", "Centro Histórico", "Chácara das Pedras", "Chapéu do Sol", "Cidade Baixa", "Coronel Aparício Borges", "Costa e Silva", "Cristal", "Cristo Redentor", "Espírito Santo", "Extrema", "Farrapos", "Farroupilha", "Floresta", "Glória", "Guarujá", "Higienópolis", "Hípica", "Humaitá", "Independência", "Ipanema", "Jardim Botânico", "Jardim Carvalho", "Jardim do Salso", "Jardim Europa", "Jardim Floresta", "Jardim Isabel", "Jardim Itu", "Jardim Leopoldina", "Jardim Lindóia", "Jardim Sabará", "Jardim São Pedro", "Lageado", "Lami", "Lomba do Pinheiro", "Mário Quintana", "Medianeira", "Menino Deus", "Moinhos", "Moinhos de Vento", "Mont Serrat", "Morro Santana", "Navegantes", "Nonoai", "Parque Santa Fé", "Partenon", "Passo da Areia", "Passo das Pedras", "Pedra Redonda", "Petrópolis", "Pitinga", "Ponta Grossa", "Praia de Belas", "Restinga", "Rio Branco", "Rubem Berta", "Santa Cecília", "Santa Maria Goretti", "Santa Rosa de Lima", "Santa Tereza", "Santana", "Santo Antônio", "São Caetano", "São Geraldo", "São João", "São José", "São Sebastião", "Sarandi", "Serraria", "Sétimo Céu", "Teresópolis", "Três Figueiras", "Tristeza", "Vila Assunção", "Vila Conceição", "Vila Ipiranga", "Vila Jardim", "Vila João Pessoa", "Vila Nova", "Vila São José",
+  "Aberta dos Morros", "Agronomia", "Anchieta", "ArquipÃ©lago", "Auxiliadora", "Azenha", "Bela Vista", "BelÃ©m Novo", "BelÃ©m Velho", "Boa Vista", "Boa Vista do Sul", "Bom Fim", "Bom Jesus", "CamaquÃ£", "Campo Novo", "Cascata", "Cavalhada", "Centro", "Centro HistÃ³rico", "ChÃ¡cara das Pedras", "ChapÃ©u do Sol", "Cidade Baixa", "Coronel AparÃ­cio Borges", "Costa e Silva", "Cristal", "Cristo Redentor", "EspÃ­rito Santo", "Extrema", "Farrapos", "Farroupilha", "Floresta", "GlÃ³ria", "GuarujÃ¡", "HigienÃ³polis", "HÃ­pica", "HumaitÃ¡", "IndependÃªncia", "Ipanema", "Jardim BotÃ¢nico", "Jardim Carvalho", "Jardim do Salso", "Jardim Europa", "Jardim Floresta", "Jardim Isabel", "Jardim Itu", "Jardim Leopoldina", "Jardim LindÃ³ia", "Jardim SabarÃ¡", "Jardim SÃ£o Pedro", "Lageado", "Lami", "Lomba do Pinheiro", "MÃ¡rio Quintana", "Medianeira", "Menino Deus", "Moinhos", "Moinhos de Vento", "Mont Serrat", "Morro Santana", "Navegantes", "Nonoai", "Parque Santa FÃ©", "Partenon", "Passo da Areia", "Passo das Pedras", "Pedra Redonda", "PetrÃ³polis", "Pitinga", "Ponta Grossa", "Praia de Belas", "Restinga", "Rio Branco", "Rubem Berta", "Santa CecÃ­lia", "Santa Maria Goretti", "Santa Rosa de Lima", "Santa Tereza", "Santana", "Santo AntÃ´nio", "SÃ£o Caetano", "SÃ£o Geraldo", "SÃ£o João", "SÃ£o JosÃ©", "SÃ£o SebastiÃ£o", "Sarandi", "Serraria", "SÃ©timo CÃ©u", "TeresÃ³polis", "TrÃªs Figueiras", "Tristeza", "Vila AssunÃ§Ã£o", "Vila ConceiÃ§Ã£o", "Vila Ipiranga", "Vila Jardim", "Vila João Pessoa", "Vila Nova", "Vila SÃ£o JosÃ©",
 ];
 const demoDeliveryZones: DeliveryZone[] = [
   { id: "zon_dog_1", company_id: "cmp_dogexpress", neighborhood: "Centro", fee: 7.9, estimated_minutes: "35-45", active: true },
@@ -296,7 +298,7 @@ export const initialMockDatabase: MockDatabaseState = {
       logo_url: "",
       banner_url: "https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=1600&q=80",
       whatsapp: "5551999990000",
-      address: "Av. Cristóvão Colombo, 820 - Porto Alegre",
+      address: "Av. CristÃ³vÃ£o Colombo, 820 - Porto Alegre",
       hero_image: "https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=1600&q=80",
       primary_color: "#116a4b",
       minimum_order: 25,
@@ -377,12 +379,12 @@ export const initialMockDatabase: MockDatabaseState = {
       created_at: "2026-03-12T10:00:00.000Z",
     },
   ],
-  master_users: [{ id: "mst_1", name: "Admin Master", email: "master@startt.com", password: "123456", role: "master", is_active: true }],
+  master_users: [{ id: "mst_1", name: "Admin Master", email: "master@startt.com", password: "Achieve123", role: "master", is_active: true }],
   users: [
-    { id: "usr_dog_owner", company_id: "cmp_dogexpress", name: "Marina Alves", email: "admin@dogexpress.com", password: "123456", role: "dono", is_active: true, created_at: now },
-    { id: "usr_dog_cash", company_id: "cmp_dogexpress", name: "Caixa Dog", email: "caixa@dogexpress.com", password: "123456", role: "caixa", is_active: true, created_at: now },
-    { id: "usr_piz_owner", company_id: "cmp_pizzariajoao", name: "João Pereira", email: "admin@pizzariadojoao.com", password: "123456", role: "dono", is_active: true, created_at: now },
-    { id: "usr_bur_owner", company_id: "cmp_burguerpaulo", name: "Paulo Mendes", email: "admin@burguerdopaulo.com", password: "123456", role: "dono", is_active: true, created_at: now },
+    { id: "usr_dog_owner", company_id: "cmp_dogexpress", name: "Marina Alves", email: "admin@dogexpress.com", password: "Startt123", role: "dono", is_active: true, created_at: now },
+    { id: "usr_dog_cash", company_id: "cmp_dogexpress", name: "Caixa Dog", email: "caixa@dogexpress.com", password: "Startt123", role: "caixa", is_active: true, created_at: now },
+    { id: "usr_piz_owner", company_id: "cmp_pizzariajoao", name: "João Pereira", email: "admin@pizzariadojoao.com", password: "Startt123", role: "dono", is_active: true, created_at: now },
+    { id: "usr_bur_owner", company_id: "cmp_burguerpaulo", name: "Paulo Mendes", email: "admin@burguerdopaulo.com", password: "Startt123", role: "dono", is_active: true, created_at: now },
   ],
   categories: [
     { id: "cat_dog_1", company_id: "cmp_dogexpress", name: "Dogs", sort_order: 1, active: true },
@@ -396,9 +398,9 @@ export const initialMockDatabase: MockDatabaseState = {
   ].map((category) => category.company_id === "cmp_burguerdopaulo" ? { ...category, company_id: "cmp_burguerpaulo" } : category),
   products: [
     { id: "prd_dog_1", company_id: "cmp_dogexpress", category_id: "cat_dog_1", name: "Dog Startt Clássico", description: "Pão macio, salsicha premium, molho da casa, batata palha e milho.", price: 22.9, image: "https://images.unsplash.com/photo-1619740455993-9e612b1af08a?auto=format&fit=crop&w=900&q=80", ingredients: "Pão, salsicha premium, milho, batata palha, ketchup, maionese e molho da casa", preparation_time: 12, featured: true, active: true, badge: "Mais pedido" },
-    { id: "prd_dog_2", company_id: "cmp_dogexpress", category_id: "cat_dog_2", name: "Combo Dog + Refri", description: "Dog clássico, refrigerante lata e embalagem lacrada para viagem.", price: 31.9, image: "https://images.unsplash.com/photo-1625813506062-0aeb1d7a094b?auto=format&fit=crop&w=900&q=80", ingredients: "Dog clássico, refrigerante lata e embalagem para viagem", preparation_time: 15, featured: false, active: true, badge: "Combo" },
+    { id: "prd_dog_2", company_id: "cmp_dogexpress", category_id: "cat_dog_2", name: "Combo Dog + Refri", description: "Dog clÃ¡ssico, refrigerante lata e embalagem lacrada para viagem.", price: 31.9, image: "https://images.unsplash.com/photo-1625813506062-0aeb1d7a094b?auto=format&fit=crop&w=900&q=80", ingredients: "Dog clÃ¡ssico, refrigerante lata e embalagem para viagem", preparation_time: 15, featured: false, active: true, badge: "Combo" },
     { id: "prd_dog_3", company_id: "cmp_dogexpress", category_id: "cat_dog_3", name: "Refrigerante lata", description: "Coca-Cola, Guaraná ou Sprite. 350 ml.", price: 7.9, image: "https://images.unsplash.com/photo-1581006852262-e4307cf6283a?auto=format&fit=crop&w=900&q=80", ingredients: "Bebida lata 350 ml", preparation_time: 1, featured: false, active: true },
-    { id: "prd_piz_1", company_id: "cmp_pizzariajoao", category_id: "cat_piz_1", name: "Pizza Margherita", description: "Molho artesanal, muçarela, tomate, manjericão e azeite.", price: 59.9, image: "https://images.unsplash.com/photo-1604382354936-07c5d9983bd3?auto=format&fit=crop&w=900&q=80", ingredients: "Massa artesanal, molho de tomate, muçarela, tomate, manjericão e azeite", preparation_time: 30, featured: true, active: true, badge: "Forno a lenha" },
+    { id: "prd_piz_1", company_id: "cmp_pizzariajoao", category_id: "cat_piz_1", name: "Pizza Margherita", description: "Molho artesanal, muçarela, tomate, manjericÃ£o e azeite.", price: 59.9, image: "https://images.unsplash.com/photo-1604382354936-07c5d9983bd3?auto=format&fit=crop&w=900&q=80", ingredients: "Massa artesanal, molho de tomate, muçarela, tomate, manjericÃ£o e azeite", preparation_time: 30, featured: true, active: true, badge: "Forno a lenha" },
     { id: "prd_piz_2", company_id: "cmp_pizzariajoao", category_id: "cat_piz_2", name: "Calzone quatro queijos", description: "Massa fina, parmesão, provolone, gorgonzola e muçarela.", price: 42.5, image: "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?auto=format&fit=crop&w=900&q=80", ingredients: "Massa fina, parmesão, provolone, gorgonzola e muçarela", preparation_time: 24, featured: false, active: true },
     { id: "prd_bur_1", company_id: "cmp_burguerpaulo", category_id: "cat_bur_1", name: "Smash Paulo", description: "Dois smash burgers, cheddar, cebola caramelizada e molho especial.", price: 34.9, image: "https://images.unsplash.com/photo-1550317138-10000687a72b?auto=format&fit=crop&w=900&q=80", ingredients: "Pão brioche, dois smash burgers, cheddar, cebola caramelizada e molho especial", preparation_time: 18, featured: true, active: true, badge: "Assinatura" },
     { id: "prd_bur_2", company_id: "cmp_burguerpaulo", category_id: "cat_bur_2", name: "Combo Smash", description: "Smash Paulo, fritas rústicas e bebida lata.", price: 47.9, image: "https://images.unsplash.com/photo-1572802419224-296b0aeee0d9?auto=format&fit=crop&w=900&q=80", ingredients: "Smash Paulo, fritas rústicas e bebida lata", preparation_time: 22, featured: false, active: true },
@@ -410,11 +412,11 @@ export const initialMockDatabase: MockDatabaseState = {
     { id: "cus_bur_1", company_id: "cmp_burguerpaulo", name: "Lucas Vieira", phone: "(51) 97777-4040", normalized_phone: normalizeSeedPhone("(51) 97777-4040"), address: "Auxiliadora", total_orders: 1, total_spent: 61.8, last_order_at: monthStart, created_at: monthStart, updated_at: monthStart },
   ],
   voucher_brands: [
-    { id: "vou_dog_1", company_id: "cmp_dogexpress", name: "Alelo", fee_percentage: 4.5, active: true },
-    { id: "vou_dog_2", company_id: "cmp_dogexpress", name: "Sodexo", fee_percentage: 5, active: true },
-    { id: "vou_dog_3", company_id: "cmp_dogexpress", name: "VR", fee_percentage: 4, active: false },
-    { id: "vou_piz_1", company_id: "cmp_pizzariajoao", name: "Ticket", fee_percentage: 3.8, active: true },
-    { id: "vou_bur_1", company_id: "cmp_burguerpaulo", name: "Pluxee", fee_percentage: 4.2, active: true },
+    { id: "vou_dog_1", company_id: "cmp_dogexpress", name: "Alelo", fee_percentage: 4.5, active: true, created_at: now, updated_at: now },
+    { id: "vou_dog_2", company_id: "cmp_dogexpress", name: "Sodexo", fee_percentage: 5, active: true, created_at: now, updated_at: now },
+    { id: "vou_dog_3", company_id: "cmp_dogexpress", name: "VR", fee_percentage: 4, active: false, created_at: now, updated_at: now },
+    { id: "vou_piz_1", company_id: "cmp_pizzariajoao", name: "Ticket", fee_percentage: 3.8, active: true, created_at: now, updated_at: now },
+    { id: "vou_bur_1", company_id: "cmp_burguerpaulo", name: "Pluxee", fee_percentage: 4.2, active: true, created_at: now, updated_at: now },
   ],
   delivery_zones: [...zonesForCompany("cmp_dogexpress"), ...zonesForCompany("cmp_pizzariajoao"), ...zonesForCompany("cmp_burguerpaulo")],
   coupons: [
@@ -480,3 +482,5 @@ export function createDatabaseApi(state: MockDatabaseState) {
 }
 
 export const mockDatabase = createDatabaseApi(initialMockDatabase);
+
+

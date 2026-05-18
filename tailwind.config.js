@@ -6,7 +6,7 @@ export default {
     extend: {
       fontFamily: {
         sans: ["DM Sans", "ui-sans-serif", "system-ui", "sans-serif"],
-        display: ["Syne", "ui-sans-serif", "system-ui", "sans-serif"],
+        display: ["DM Sans", "ui-sans-serif", "system-ui", "sans-serif"],
       },
 
       colors: {

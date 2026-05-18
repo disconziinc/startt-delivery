@@ -10,9 +10,12 @@ import {
   ClipboardList,
   CreditCard,
   FileText,
+  Eye,
+  EyeOff,
   LayoutDashboard,
   LogIn,
   LogOut,
+  Mail,
   MapPin,
   Menu,
   MessageCircle,
@@ -24,6 +27,7 @@ import {
   Settings,
   ShieldCheck,
   ShoppingBag,
+  Smartphone,
   Sparkles,
   Star,
   Tags,
@@ -87,6 +91,7 @@ type CheckoutState = {
 };
 type AdminScreen =
   | "dashboard"
+  | "conta"
   | "caixa"
   | "pedidos"
   | "clientes"
@@ -108,6 +113,7 @@ const SAVE_DELAY = 250;
 
 const adminNav: Array<{ id: AdminScreen; label: string; icon: React.ReactNode }> = [
   { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={18} /> },
+  { id: "conta", label: "Minha conta", icon: <UserRound size={18} /> },
   { id: "caixa", label: "Caixa", icon: <CreditCard size={18} /> },
   { id: "pedidos", label: "Pedidos", icon: <ClipboardList size={18} /> },
   { id: "clientes", label: "Clientes", icon: <UsersRound size={18} /> },
@@ -355,7 +361,7 @@ function App() {
     return withToast(<MasterApp db={db} setDbState={setDbState} screen={(parts[1] as MasterScreen) || "dashboard"} login={parts[1] === "login"} />);
   }
 
-  if (!parts[0]) return withToast(<CompanyDirectory companies={db.companies} />);
+  if (!parts[0]) return withToast(<InstitutionalLanding />);
 
   const company = db.getCompanyBySlug(parts[0]);
   if (!company) return withToast(<NotFound message={`Não encontramos a empresa “/${parts[0]}”. Confira o link e tente novamente.`} />);
@@ -409,32 +415,153 @@ function AppHeader({ company }: { company?: Company }) {
   );
 }
 
-function CompanyDirectory({ companies }: { companies: Company[] }) {
+function InstitutionalLanding() {
+  const whatsappDemo = "https://wa.me/5551992885988?text=Ol%C3%A1%21%20Vim%20pelo%20site%20da%20Startt%20Delivery%20e%20gostaria%20de%20solicitar%20uma%20demonstra%C3%A7%C3%A3o.";
+  const [lead, setLead] = useState({ name: "", business: "", whatsapp: "", email: "", city: "", instagram: "", message: "" });
+  const [leadError, setLeadError] = useState("");
+  const [leadSent, setLeadSent] = useState(false);
+  const benefits = ["Cardápio digital próprio", "Pedidos via WhatsApp", "Painel administrativo", "Controle de clientes", "Identidade própria", "Sem depender de marketplace", "Sem pagamento no app", "Rápido de usar", "Visual profissional"];
+  const steps = ["Configuramos sua lancheria com identidade, slug e dados comerciais.", "Você cadastra produtos, categorias, horários, fretes e cupons.", "O cliente acessa seu cardápio e finaliza o pedido direto no WhatsApp."];
+  function updateLead(field: keyof typeof lead, value: string) {
+    setLead((current) => ({ ...current, [field]: value }));
+    setLeadError("");
+  }
+  function leadBody() {
+    return [
+      "Novo interesse pelo Startt Delivery",
+      "",
+      `Nome: ${lead.name}`,
+      `Lancheria: ${lead.business}`,
+      `WhatsApp: ${lead.whatsapp}`,
+      `E-mail: ${lead.email}`,
+      `Cidade: ${lead.city}`,
+      `Instagram: ${lead.instagram || "-"}`,
+      "",
+      `Mensagem: ${lead.message || "-"}`,
+    ].join("\n");
+  }
+  function validateLead() {
+    if (!lead.name.trim() || !lead.business.trim() || !lead.whatsapp.trim() || !lead.email.trim() || !lead.city.trim()) {
+      setLeadError("Preencha nome, lancheria, WhatsApp, e-mail e cidade para solicitar a demonstração.");
+      return false;
+    }
+    return true;
+  }
+  function submitLead(event: React.FormEvent) {
+    event.preventDefault();
+    if (!validateLead()) return;
+    setLeadSent(true);
+    window.location.href = `mailto:disconziinc@gmail.com?subject=${encodeURIComponent("Solicitação de demonstração - Startt Delivery")}&body=${encodeURIComponent(leadBody())}`;
+  }
+  function sendLeadWhatsApp() {
+    if (!validateLead()) return;
+    setLeadSent(true);
+    window.open(`https://wa.me/5551992885988?text=${encodeURIComponent(leadBody())}`, "_blank", "noopener,noreferrer");
+  }
   return (
-    <main className="min-h-screen bg-startt-paper">
-      <AppHeader />
-      <section className="mx-auto grid w-[min(1180px,calc(100%-32px))] gap-6 py-10">
-        <div>
-          <span className="inline-flex items-center gap-2 text-sm font-black uppercase text-startt-green"><Sparkles size={16} /> SaaS multiempresa</span>
-          <h1 className="mt-2 text-5xl font-black leading-none md:text-7xl">Startt Delivery</h1>
-          <p className="mt-4 max-w-2xl text-lg leading-8 text-startt-muted">Cardápio público por slug, admin por empresa e Admin Master para gestão do SaaS.</p>
+    <main className="min-h-screen bg-[#0A0A0A] text-[#F5F5F5]">
+      <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0A0A0A]/86 px-4 py-3 backdrop-blur-xl">
+        <div className="mx-auto flex w-[min(1180px,100%)] items-center justify-between gap-4">
+          <a href="/" className="flex items-center gap-3">
+            <img className="h-11 w-11 rounded-xl object-cover" src="/startt-logo.png" alt="Startt Delivery" />
+            <span className="leading-tight"><strong className="block text-sm font-semibold">Startt Delivery</strong><small className="text-xs text-white/55">por Startt Facilities</small></span>
+          </a>
+          <nav className="hidden items-center gap-7 text-sm font-medium text-white/70 md:flex">
+            <a href="#home" className="hover:text-white">Home</a>
+            <a href="#contatos" className="hover:text-white">Contatos</a>
+            <a href="#sobre" className="hover:text-white">Sobre nós</a>
+          </nav>
+          <a href={whatsappDemo} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center justify-center rounded-full bg-[#FF6A00] px-4 text-sm font-semibold text-white shadow-lg shadow-[#FF6A00]/25">Solicite uma demonstração</a>
         </div>
-        <div className="grid gap-4 md:grid-cols-3">
-          {companies.map((company) => (
-            <a key={company.id} href={`/${company.slug}`} className="overflow-hidden rounded-lg border border-black/10 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-xl">
-              <img className="h-44 w-full object-cover" src={company.hero_image} alt={company.name} />
-              <div className="grid gap-2 p-5">
-                <strong className="text-xl">{company.name}</strong>
-                <span className="text-sm text-startt-muted">/{company.slug}</span>
-                <span className="inline-flex items-center gap-2 text-sm font-bold text-startt-green">Abrir cardápio <ChevronRight size={16} /></span>
+      </header>
+
+      <section id="home" className="relative isolate overflow-hidden px-4 pb-16 pt-10 md:pb-24 md:pt-16">
+        <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_50%_0%,rgba(255,106,0,.28),transparent_34rem),linear-gradient(180deg,#0A0A0A_0%,#1A1A1A_58%,#0A0A0A_100%)]" />
+        <div className="mx-auto grid w-[min(1180px,100%)] items-center gap-10 lg:grid-cols-[1.02fr_.98fr]">
+          <div className="max-w-3xl">
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold uppercase text-[#FFB27A]"><Sparkles size={15} /> SaaS para negócios locais de alimentação</span>
+            <h1 className="mt-6 text-[clamp(2.55rem,9vw,5.8rem)] font-semibold leading-[.94] tracking-normal">Seu cardápio do seu jeito.</h1>
+            <p className="mt-6 max-w-2xl text-base leading-8 text-white/68 md:text-lg">Uma plataforma moderna para lancherias criarem seu próprio cardápio digital, receberem pedidos pelo WhatsApp e atenderem seus clientes com mais velocidade, identidade e controle.</p>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <a href={whatsappDemo} target="_blank" rel="noreferrer" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-[#FF6A00] px-5 font-semibold text-white shadow-xl shadow-[#FF6A00]/25"><MessageCircle size={18} /> Solicite uma demonstração</a>
+              <a href="#lead" className="inline-flex min-h-12 items-center justify-center rounded-full border border-white/12 bg-white/5 px-5 font-semibold text-white hover:bg-white/10">Ver solução</a>
+            </div>
+          </div>
+          <div className="grid gap-5 md:grid-cols-[.78fr_1fr] lg:items-center">
+            <div className="mx-auto w-[min(260px,82vw)] rounded-[2.2rem] border border-white/14 bg-[#111] p-3 shadow-2xl shadow-black/40">
+              <div className="overflow-hidden rounded-[1.7rem] bg-[#F5F5F5] text-[#0A0A0A]">
+                <div className="bg-[#FF6A00] p-5 text-white"><p className="text-xs font-semibold uppercase">Cardápio digital</p><h2 className="mt-12 text-2xl font-semibold leading-tight">Burger Prime</h2><p className="text-sm text-white/80">Aberto hoje até 23h</p></div>
+                <div className="grid gap-3 p-4">{["Combo artesanal", "Pizza brotinho", "Batata especial"].map((item, index) => <div key={item} className="flex items-center justify-between rounded-2xl bg-white p-3 shadow-sm"><div><strong className="text-sm">{item}</strong><p className="text-xs text-black/45">Pedido via WhatsApp</p></div><span className="rounded-full bg-[#FF6A00]/10 px-3 py-1 text-xs font-bold text-[#FF6A00]">R$ {29 + index * 8}</span></div>)}</div>
               </div>
-            </a>
-          ))}
+            </div>
+            <div className="rounded-[1.7rem] border border-white/10 bg-white/[.06] p-5 shadow-2xl shadow-black/30">
+              <div className="mb-5 flex items-center justify-between"><div><p className="text-xs font-semibold uppercase text-white/45">Dashboard</p><h3 className="text-2xl font-semibold">Controle em tempo real</h3></div><BarChart3 className="text-[#FF6A00]" /></div>
+              <div className="grid gap-3 sm:grid-cols-2"><MetricMini label="Pedidos hoje" value="42" /><MetricMini label="Clientes" value="1.284" /><MetricMini label="Ticket médio" value="R$ 46" /><MetricMini label="WhatsApp" value="Direto" /></div>
+              <div className="mt-5 h-24 rounded-2xl bg-[linear-gradient(135deg,rgba(255,106,0,.9),rgba(255,255,255,.16))]" />
+            </div>
+          </div>
         </div>
       </section>
-      <Footer />
+
+      <section className="px-4 py-16">
+        <div className="mx-auto grid w-[min(1180px,100%)] gap-6">
+          <div className="max-w-2xl"><h2 className="text-3xl font-semibold md:text-5xl">Tudo que uma lancheria precisa para vender melhor.</h2><p className="mt-4 leading-7 text-white/62">Sem marketplace no meio, sem complexidade desnecessária e com a sua marca na frente.</p></div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{benefits.map((benefit) => <article key={benefit} className="rounded-2xl border border-white/10 bg-white/[.045] p-5"><Check className="mb-4 text-[#FF6A00]" size={20} /><strong className="font-semibold">{benefit}</strong></article>)}</div>
+        </div>
+      </section>
+
+      <section className="px-4 py-16">
+        <div className="mx-auto grid w-[min(1180px,100%)] gap-8 rounded-[2rem] border border-white/10 bg-[#1A1A1A] p-6 md:p-10 lg:grid-cols-[.8fr_1.2fr]">
+          <div><span className="text-sm font-semibold uppercase text-[#FF6A00]">Como funciona</span><h2 className="mt-3 text-3xl font-semibold md:text-4xl">Do cadastro ao pedido, em poucos passos.</h2></div>
+          <div className="grid gap-4">{steps.map((step, index) => <div key={step} className="flex gap-4 rounded-2xl bg-white/[.04] p-4"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#FF6A00] font-semibold">{index + 1}</span><p className="leading-7 text-white/70">{step}</p></div>)}</div>
+        </div>
+      </section>
+
+      <section id="sobre" className="px-4 py-16">
+        <div className="mx-auto grid w-[min(1180px,100%)] items-center gap-8 lg:grid-cols-[.82fr_1.18fr]">
+          <img className="h-[520px] w-full rounded-[2rem] object-cover object-[50%_24%] shadow-2xl shadow-black/40" src="/paulo-disconzi.jpeg" alt="Paulo Disconzi" />
+          <div className="grid gap-5 text-white/70">
+            <span className="text-sm font-semibold uppercase text-[#FF6A00]">Sobre nós</span>
+            <h2 className="text-3xl font-semibold text-white md:text-5xl">Startt Delivery, por Startt Facilities.</h2>
+            <p>O Startt Delivery nasceu dentro do ecossistema Startt Facilities com o objetivo de oferecer uma solução moderna, acessível e completa para lancherias que desejam profissionalizar sua presença digital.</p>
+            <p>Idealizado por Paulo Disconzi, em Porto Alegre-RS, o sistema foi desenvolvido para atender negócios que precisam de mais autonomia, organização e identidade própria no atendimento online.</p>
+            <p>A proposta é simples: permitir que cada lancheria tenha seu próprio cardápio digital, receba pedidos diretamente pelo WhatsApp e ofereça uma experiência mais rápida, humana e profissional para seus clientes.</p>
+            <p>Mais do que uma ferramenta, o Startt Delivery foi criado para ajudar pequenos negócios a venderem melhor, fortalecerem sua marca e terem mais controle sobre seus pedidos e clientes.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="contatos" className="px-4 py-16">
+        <div className="mx-auto grid w-[min(1180px,100%)] gap-8 lg:grid-cols-[.9fr_1.1fr]">
+          <div className="rounded-[2rem] border border-white/10 bg-white/[.045] p-6 md:p-8">
+            <h2 className="text-3xl font-semibold">Contatos</h2>
+            <div className="mt-6 grid gap-4 text-white/70">
+              <a className="flex items-center gap-3 hover:text-white" href="mailto:disconziinc@gmail.com"><Mail size={18} /> disconziinc@gmail.com</a>
+              <a className="flex items-center gap-3 hover:text-white" href={whatsappDemo} target="_blank" rel="noreferrer"><MessageCircle size={18} /> +5551992885988</a>
+              <a className="flex items-center gap-3 hover:text-white" href="https://www.instagram.com/startt.eco" target="_blank" rel="noreferrer"><Smartphone size={18} /> @startt.eco</a>
+            </div>
+            <div className="mt-7 flex flex-col gap-3 sm:flex-row"><a href={whatsappDemo} target="_blank" rel="noreferrer" className="rounded-full bg-[#FF6A00] px-5 py-3 text-center font-semibold text-white">Falar com a Startt</a><a href={whatsappDemo} target="_blank" rel="noreferrer" className="rounded-full border border-white/12 px-5 py-3 text-center font-semibold">Solicitar demonstração</a></div>
+          </div>
+          <form id="lead" onSubmit={submitLead} className="grid gap-4 rounded-[2rem] border border-white/10 bg-[#F5F5F5] p-5 text-[#0A0A0A] shadow-2xl md:p-8">
+            <div><h2 className="text-3xl font-semibold">Solicitar demonstração</h2><p className="mt-2 text-sm leading-6 text-black/58">Conte um pouco sobre sua lancheria. Você pode enviar por e-mail ou WhatsApp.</p></div>
+            <div className="grid gap-3 sm:grid-cols-2"><LeadInput placeholder="Nome" value={lead.name} onChange={(value) => updateLead("name", value)} /><LeadInput placeholder="Nome da lancheria" value={lead.business} onChange={(value) => updateLead("business", value)} /><LeadInput placeholder="WhatsApp" value={lead.whatsapp} onChange={(value) => updateLead("whatsapp", value)} /><LeadInput placeholder="E-mail" value={lead.email} onChange={(value) => updateLead("email", value)} /><LeadInput placeholder="Cidade" value={lead.city} onChange={(value) => updateLead("city", value)} /><LeadInput placeholder="Instagram da lancheria" value={lead.instagram} onChange={(value) => updateLead("instagram", value)} /></div>
+            <textarea className="min-h-28 rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm outline-[#FF6A00]" placeholder="Mensagem" value={lead.message} onChange={(event) => updateLead("message", event.target.value)} />
+            {leadError && <p className="rounded-2xl bg-red-50 p-3 text-sm font-semibold text-startt-red">{leadError}</p>}
+            {leadSent && <p className="rounded-2xl bg-orange-50 p-3 text-sm font-semibold text-[#FF6A00]">Dados preparados com sucesso. Finalize o envio no app aberto.</p>}
+            <div className="grid gap-3 sm:grid-cols-2"><button className="min-h-12 rounded-full bg-[#FF6A00] px-5 font-semibold text-white">Solicitar demonstração</button><button type="button" onClick={sendLeadWhatsApp} className="min-h-12 rounded-full border border-black/10 px-5 font-semibold">Enviar pelo WhatsApp</button></div>
+          </form>
+        </div>
+      </section>
     </main>
   );
+}
+
+function MetricMini({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-2xl border border-white/10 bg-black/18 p-4"><p className="text-xs font-semibold uppercase text-white/42">{label}</p><strong className="mt-2 block text-2xl font-semibold">{value}</strong></div>;
+}
+
+function LeadInput({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {
+  return <input className="min-h-12 rounded-2xl border border-black/10 bg-white px-4 text-sm outline-[#FF6A00]" placeholder={placeholder} value={value} onChange={(event) => onChange(event.target.value)} />;
 }
 
 function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: DatabaseApi; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>>; company: Company; checkoutOnly?: boolean }) {
@@ -783,8 +910,10 @@ function CompanyAdmin({ db, setDbState, company, screen, login }: { db: Database
   const [sessionUserId, setSessionUserId] = useState(() => localStorage.getItem(sessionKey));
   const [credentials, setCredentials] = useState({ email: "", password: "" });
   const [loginError, setLoginError] = useState("");
+  const [showAdminPassword, setShowAdminPassword] = useState(false);
   const [newOrderBadge, setNewOrderBadge] = useState(0);
   const [newOrderFlash, setNewOrderFlash] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const lastOrderCount = useRef(bundle.orders.length);
   const user = bundle.users.find((item) => item.id === sessionUserId);
   const allowed = user ? roleAccess[user.role] : [];
@@ -854,14 +983,14 @@ function CompanyAdmin({ db, setDbState, company, screen, login }: { db: Database
 
   if (!user) {
     return (
-      <main className="grid min-h-screen place-items-center bg-startt-paper p-4">
-        <form onSubmit={doLogin} className="grid w-[min(460px,100%)] gap-4 rounded-lg border border-black/10 bg-white p-6 shadow-xl">
-          <LogoTitle title={`${company.name} Admin`} subtitle="Login da empresa" />
+      <main className="grid min-h-screen place-items-center bg-[radial-gradient(circle_at_top,rgba(242,106,27,.16),transparent_34rem),#f7f4ef] p-4">
+        <form onSubmit={doLogin} className="grid w-[min(460px,100%)] gap-4 rounded-3xl border border-black/10 bg-white p-6 shadow-2xl">
+          <LogoTitle title="Acesse seu painel" subtitle={`Produto Startt Delivery para ${company.name}`} />
+          <p className="text-sm leading-6 text-startt-muted">Gerencie seu cardápio, pedidos e clientes em um ambiente seguro.</p>
           <Input placeholder="E-mail" value={credentials.email} onChange={(email) => setCredentials({ ...credentials, email })} />
-          <input className="min-h-11 rounded-lg border border-black/10 px-3 outline-startt-green" placeholder="Senha" type="password" value={credentials.password} onChange={(event) => setCredentials({ ...credentials, password: event.target.value })} />
+          <PasswordField placeholder="Senha" value={credentials.password} onChange={(password) => setCredentials({ ...credentials, password })} visible={showAdminPassword} onToggle={() => setShowAdminPassword((value) => !value)} />
           {loginError && <p className="rounded-lg bg-startt-red/10 p-3 text-sm font-bold text-startt-red">{loginError}</p>}
           <button className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-startt-green px-4 font-black text-white"><LogIn size={18} /> Entrar</button>
-          <p className="text-sm text-startt-muted">Teste: {bundle.users[0]?.email} / 123456</p>
         </form>
       </main>
     );
@@ -885,14 +1014,28 @@ function CompanyAdmin({ db, setDbState, company, screen, login }: { db: Database
       </aside>
       <header className="sticky top-0 z-30 border-b border-black/10 bg-white px-4 py-4 shadow-sm">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3"><button className="grid h-10 w-10 place-items-center rounded-xl hover:bg-startt-soft" aria-label="Menu"><Menu size={22} /></button><strong>{adminNav.find((item) => item.id === activeScreen)?.label || "Dashboard"}</strong></div>
+          <div className="flex items-center gap-3"><button onClick={() => setMobileNavOpen(true)} className="grid h-11 w-11 place-items-center rounded-xl hover:bg-startt-soft lg:hidden" aria-label="Menu"><Menu size={22} /></button><strong>{adminNav.find((item) => item.id === activeScreen)?.label || "Dashboard"}</strong></div>
           <div className="flex items-center gap-2">
             {newOrderBadge > 0 && <a href={`/${company.slug}/admin/pedidos`} onClick={() => setNewOrderBadge(0)} className={`rounded-xl px-3 py-2 text-sm font-black text-white ${newOrderFlash ? "bg-startt-red shadow-xl" : "bg-startt-green"}`}>{newOrderBadge} novo(s)</a>}
+            <a className="hidden rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-bold md:inline-flex" href={`/${company.slug}/admin/conta`}>Minha conta</a>
             <a className="hidden rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-bold md:inline-flex" href={`/${company.slug}`}>Ver site</a>
             <span className="grid h-10 w-10 place-items-center rounded-xl bg-startt-ink text-xs font-black text-white">{user.name.slice(0, 2).toUpperCase()}</span>
           </div>
         </div>
       </header>
+      <div className={`fixed inset-0 z-50 lg:hidden ${mobileNavOpen ? "pointer-events-auto" : "pointer-events-none"}`}>
+        <button className={`absolute inset-0 bg-black/45 backdrop-blur-sm transition ${mobileNavOpen ? "opacity-100" : "opacity-0"}`} onClick={() => setMobileNavOpen(false)} aria-label="Fechar menu" />
+        <aside className={`absolute inset-y-0 left-0 grid w-[min(330px,88vw)] grid-rows-[auto_1fr_auto] bg-[#121212] p-5 text-white shadow-drawer transition-transform duration-300 ${mobileNavOpen ? "translate-x-0" : "-translate-x-full"}`}>
+          <div className="flex items-center justify-between border-b border-white/10 pb-5">
+            <div><p className="font-black uppercase tracking-[0.16em]">{company.name}</p><p className="text-xs text-white/55">{user.name}</p></div>
+            <button className="grid h-10 w-10 place-items-center rounded-xl bg-white/10" onClick={() => setMobileNavOpen(false)} aria-label="Fechar"><X size={20} /></button>
+          </div>
+          <nav className="mt-5 grid content-start gap-2 overflow-auto">
+            {adminNav.filter((item) => allowed.includes(item.id)).map((item) => <a key={item.id} href={`/${company.slug}/admin/${item.id}`} onClick={() => setMobileNavOpen(false)} className={`flex min-h-12 items-center gap-3 rounded-xl px-3 text-sm font-bold ${activeScreen === item.id ? "bg-startt-green text-white" : "text-white/72 hover:bg-white/10"}`}>{item.icon}{item.label}</a>)}
+          </nav>
+          <div className="grid gap-2 border-t border-white/10 pt-4"><a className="rounded-xl border border-white/10 px-3 py-3 text-sm font-bold text-white/80" href={`/${company.slug}`}>Ver site público</a><button onClick={logout} className="flex min-h-12 items-center gap-3 rounded-xl bg-white/10 px-3 text-sm font-bold text-white"><LogOut size={18} /> Sair</button></div>
+        </aside>
+      </div>
       <section className="p-4 md:p-6">
         <AdminContent screen={activeScreen} db={db} setDbState={setDbState} company={company} user={user} />
       </section>
@@ -906,6 +1049,7 @@ function AdminContent({ screen, db, setDbState, company, user }: { screen: Admin
   if (screen === "relatorios" && plan && !plan.allow_reports) return <PlanBlocked />;
   if (screen === "impressao" && plan && !plan.allow_printing) return <PlanBlocked />;
   if (screen === "cupons" && plan && !plan.allow_coupons) return <PlanBlocked />;
+  if (screen === "conta") return <AccountSettings company={company} user={user} setDbState={setDbState} />;
   if (screen === "dashboard") return <Dashboard company={company} bundle={bundle} />;
   if (screen === "caixa") return <Cashier company={company} user={user} products={bundle.products.filter((item) => item.active)} setDbState={setDbState} />;
   if (screen === "pedidos") return <OrdersManager bundle={bundle} setDbState={setDbState} company={company} user={user} />;
@@ -922,6 +1066,57 @@ function AdminContent({ screen, db, setDbState, company, user }: { screen: Admin
 
 function PlanBlocked() {
   return <section className="rounded-lg border border-black/10 bg-white p-6"><h1 className="text-3xl font-black">Recurso indisponível</h1><p className="mt-2 text-startt-muted">Seu plano atual não inclui este recurso. Entre em contato com a Startt Facilities.</p></section>;
+}
+
+function AccountSettings({ company, user, setDbState }: { company: Company; user: User; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
+  const [form, setForm] = useState({ current: "", next: "", confirm: "" });
+  const [showPassword, setShowPassword] = useState(false);
+  const [saving, setSaving] = useState(false);
+  function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (saving) return;
+    if (!form.current || !form.next || !form.confirm) {
+      notify("error", "Preencha senha atual, nova senha e confirmação.");
+      return;
+    }
+    if (form.current !== user.password) {
+      notify("error", "A senha atual não confere.");
+      return;
+    }
+    if (form.next.length < 6) {
+      notify("error", "A nova senha precisa ter pelo menos 6 caracteres.");
+      return;
+    }
+    if (form.next !== form.confirm) {
+      notify("error", "A confirmação da nova senha não confere.");
+      return;
+    }
+    runSave(setSaving, () => {
+      setDbState((current) => ({
+        ...current,
+        users: current.users.map((item) => item.id === user.id && item.company_id === company.id ? { ...item, password: form.next } : item),
+      }));
+      setForm({ current: "", next: "", confirm: "" });
+    }, "Senha alterada com sucesso.");
+  }
+  return (
+    <CrudShell title="Minha conta" description="Atualize o acesso do seu usuário com segurança.">
+      <section className="grid gap-5 rounded-3xl border border-black/10 bg-white p-5 shadow-card lg:grid-cols-[.9fr_1.1fr]">
+        <div className="rounded-3xl bg-startt-ink p-6 text-white">
+          <span className="grid h-14 w-14 place-items-center rounded-2xl bg-startt-green text-lg font-black">{user.name.slice(0, 2).toUpperCase()}</span>
+          <h2 className="mt-5 text-2xl font-semibold">{user.name}</h2>
+          <p className="mt-2 text-sm text-white/58">{company.name} • {user.role}</p>
+          <p className="mt-6 text-sm leading-6 text-white/62">Seu usuário permanece vinculado somente a esta lancheria, mantendo o painel isolado por empresa.</p>
+        </div>
+        <form onSubmit={submit} className="grid content-start gap-4">
+          <PasswordField placeholder="Senha atual" value={form.current} onChange={(current) => setForm({ ...form, current })} visible={showPassword} onToggle={() => setShowPassword((value) => !value)} />
+          <PasswordField placeholder="Nova senha" value={form.next} onChange={(next) => setForm({ ...form, next })} visible={showPassword} onToggle={() => setShowPassword((value) => !value)} />
+          <PasswordField placeholder="Confirmar nova senha" value={form.confirm} onChange={(confirm) => setForm({ ...form, confirm })} visible={showPassword} onToggle={() => setShowPassword((value) => !value)} />
+          <button disabled={saving} className="min-h-12 rounded-xl bg-startt-green px-4 font-black text-white shadow-lg shadow-startt-green/20 disabled:opacity-60">{saving ? "Salvando..." : "Alterar senha"}</button>
+        </form>
+      </section>
+    </CrudShell>
+  );
 }
 
 function Dashboard({ company, bundle }: { company: Company; bundle: ReturnType<DatabaseApi["getCompanyBundle"]> }) {
@@ -1303,6 +1498,7 @@ function CompanySettings({ company, voucherBrands, setDbState }: { company: Comp
   const [form, setForm] = useState(company);
   const [saving, setSaving] = useState(false);
   const [voucherForm, setVoucherForm] = useState({ id: "", name: "", fee_percentage: "", active: true });
+  const [voucherOpen, setVoucherOpen] = useState(false);
   const defaultHour = company.opening_hours.match(/\d{1,2}:\d{2}[- às]+\d{1,2}:?\d{0,2}/)?.[0]?.replace(" às ", "-") || "18:00-23:00";
   const [hours, setHours] = useState(() => weekDays.map((day) => ({ day, active: company.is_open, time: defaultHour })));
   function openingHoursSummary() {
@@ -1320,10 +1516,20 @@ function CompanySettings({ company, voucherBrands, setDbState }: { company: Comp
       notify("error", "Informe o nome da marca do vale.");
       return;
     }
-    const brand: VoucherBrand = { id: voucherForm.id || id("vou"), company_id: company.id, name: voucherForm.name.trim(), fee_percentage: parseMoney(voucherForm.fee_percentage) || 0, active: voucherForm.active };
+    const nowIso = new Date().toISOString();
+    const previous = voucherBrands.find((item) => item.id === voucherForm.id);
+    const brand: VoucherBrand = { id: voucherForm.id || id("vou"), company_id: company.id, name: voucherForm.name.trim(), fee_percentage: parseMoney(voucherForm.fee_percentage) || 0, active: voucherForm.active, created_at: previous?.created_at || nowIso, updated_at: nowIso };
     setDbState((current) => ({ ...current, voucher_brands: voucherForm.id ? current.voucher_brands.map((item) => item.id === voucherForm.id && item.company_id === company.id ? brand : item) : [brand, ...current.voucher_brands] }));
     setVoucherForm({ id: "", name: "", fee_percentage: "", active: true });
+    setVoucherOpen(false);
     notify("success", "Marca de vale salva com sucesso.");
+  }
+  function createVoucher() { setVoucherForm({ id: "", name: "", fee_percentage: "", active: true }); setVoucherOpen(true); }
+  function editVoucher(brand: VoucherBrand) { setVoucherForm({ id: brand.id, name: brand.name, fee_percentage: String(brand.fee_percentage || ""), active: brand.active }); setVoucherOpen(true); }
+  function deleteVoucher(brand: VoucherBrand) {
+    if (!confirm(`Excluir vale ${brand.name}?`)) return;
+    setDbState((current) => ({ ...current, voucher_brands: current.voucher_brands.filter((item) => !(item.id === brand.id && item.company_id === company.id)) }));
+    notify("success", "Marca de vale excluída.");
   }
   return (
     <CrudShell title="Configurações" description="Essas configs alteram o cardápio público da empresa.">
@@ -1350,25 +1556,34 @@ function CompanySettings({ company, voucherBrands, setDbState }: { company: Comp
           <span className="rounded-xl bg-startt-rose p-3 text-sm font-bold text-startt-green">{openingHoursSummary()}</span>
         </section>
         <section className="grid gap-3 rounded-2xl border border-black/10 bg-white p-4">
-          <div>
-            <h3 className="text-lg font-black">Vales alimentação/refeição</h3>
-            <p className="text-sm text-startt-muted">Configure as marcas que aparecem no checkout público e registre a taxa de cada uma.</p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-black">Vales aceitos</h3>
+              <p className="text-sm text-startt-muted">Configure marcas, taxas e disponibilidade no checkout público.</p>
+            </div>
+            <button type="button" onClick={createVoucher} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-startt-green px-4 font-black text-white shadow-lg shadow-startt-green/20"><Plus size={18} /> Novo vale</button>
           </div>
-          <form onSubmit={saveVoucher} className="grid gap-3 md:grid-cols-[1fr_160px_auto_auto] md:items-center">
-            <Input placeholder="Marca: Alelo, Sodexo, VR..." value={voucherForm.name} onChange={(value) => setVoucherForm({ ...voucherForm, name: value })} />
-            <Input placeholder="Taxa %" value={voucherForm.fee_percentage} onChange={(value) => setVoucherForm({ ...voucherForm, fee_percentage: value })} />
-            <label className="flex min-h-12 items-center gap-2 rounded-xl bg-startt-paper px-3 font-bold"><input type="checkbox" checked={voucherForm.active} onChange={(event) => setVoucherForm({ ...voucherForm, active: event.target.checked })} /> Ativo</label>
-            <button className="min-h-12 rounded-xl bg-startt-green px-4 font-black text-white">{voucherForm.id ? "Salvar" : "Adicionar"}</button>
-          </form>
-          <div className="grid gap-2">
+          <FormDrawer open={voucherOpen} title={voucherForm.id ? "Editar vale" : "Novo vale aceito"} description="Apenas marcas ativas aparecem no checkout público desta lancheria." onClose={() => setVoucherOpen(false)}>
+            <form onSubmit={saveVoucher} className="grid gap-4">
+              <label className="grid gap-2 text-sm font-bold">Marca<Input placeholder="Alelo, Sodexo, Ticket, VR..." value={voucherForm.name} onChange={(value) => setVoucherForm({ ...voucherForm, name: value })} /></label>
+              <label className="grid gap-2 text-sm font-bold">Taxa percentual<Input placeholder="Ex: 5" value={voucherForm.fee_percentage} onChange={(value) => setVoucherForm({ ...voucherForm, fee_percentage: value })} /></label>
+              <label className="flex min-h-12 items-center gap-2 rounded-2xl bg-startt-paper px-4 font-bold"><input type="checkbox" checked={voucherForm.active} onChange={(event) => setVoucherForm({ ...voucherForm, active: event.target.checked })} /> Vale ativo no checkout</label>
+              <button className="min-h-12 rounded-xl bg-startt-green px-4 font-black text-white">{voucherForm.id ? "Salvar vale" : "Cadastrar vale"}</button>
+            </form>
+          </FormDrawer>
+          <div className="grid gap-3 sm:grid-cols-2">
             {voucherBrands.map((brand) => (
-              <div key={brand.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-startt-paper p-3">
-                <div><strong>{brand.name}</strong><p className="text-sm text-startt-muted">Taxa: {brand.fee_percentage || 0}% • {brand.active ? "Ativo" : "Inativo"}</p></div>
-                <div className="flex gap-2">
-                  <button className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-black" onClick={() => setVoucherForm({ id: brand.id, name: brand.name, fee_percentage: String(brand.fee_percentage || ""), active: brand.active })}>Editar</button>
-                  <button className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-black" onClick={() => setDbState((current) => ({ ...current, voucher_brands: current.voucher_brands.map((item) => item.id === brand.id && item.company_id === company.id ? { ...item, active: !item.active } : item) }))}>Ativar/desativar</button>
+              <article key={brand.id} className="rounded-2xl border border-black/10 bg-startt-paper p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div><strong>{brand.name}</strong><p className="text-sm text-startt-muted">Taxa cadastrada: {brand.fee_percentage || 0}%</p></div>
+                  <span className={`rounded-full px-3 py-1 text-xs font-black ${brand.active ? "bg-startt-green/10 text-startt-green" : "bg-black/5 text-startt-muted"}`}>{brand.active ? "Ativo" : "Inativo"}</span>
                 </div>
-              </div>
+                <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                  <button type="button" className="min-h-11 rounded-xl border border-black/10 bg-white px-3 text-sm font-black" onClick={() => editVoucher(brand)}>Editar</button>
+                  <button type="button" className="min-h-11 rounded-xl border border-black/10 bg-white px-3 text-sm font-black" onClick={() => setDbState((current) => ({ ...current, voucher_brands: current.voucher_brands.map((item) => item.id === brand.id && item.company_id === company.id ? { ...item, active: !item.active, updated_at: new Date().toISOString() } : item) }))}>Ativar/desativar</button>
+                  <button type="button" className="min-h-11 rounded-xl bg-startt-red px-3 text-sm font-black text-white" onClick={() => deleteVoucher(brand)}>Excluir</button>
+                </div>
+              </article>
             ))}
             {!voucherBrands.length && <Empty text="Nenhuma marca de vale configurada." />}
           </div>
@@ -1385,13 +1600,13 @@ function CompanySettings({ company, voucherBrands, setDbState }: { company: Comp
 }
 
 function UsersManager({ company, users, plan, setDbState }: { company: Company; users: User[]; plan?: Plan; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
-  const blank = { name: "", email: "", password: "123456", role: "atendente" as UserRole };
+  const blank = { name: "", email: "", password: "", role: "atendente" as UserRole };
   const [form, setForm] = useState(blank);
   const [formOpen, setFormOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  function add() { if (saving) return; if (!form.name || !form.email || !form.password) { notify("error", "Informe nome, e-mail e senha do usuário."); return; } if (!company.is_registration_enabled) { notify("error", "Cadastro/acesso temporariamente desativado."); return; } if (plan && users.length >= plan.max_users) { notify("error", "Limite de usuários do plano atingido. Entre em contato com a Startt Facilities."); return; } runSave(setSaving, () => { setDbState((current) => ({ ...current, users: [{ id: id("usr"), company_id: company.id, name: form.name, email: form.email, password: form.password, role: form.role, is_active: true, created_at: new Date().toISOString() }, ...current.users] })); setForm(blank); setFormOpen(false); }, "Usuário criado com sucesso."); }
+  function add() { if (saving) return; if (!form.name || !form.email || form.password.length < 6) { notify("error", "Informe nome, e-mail e senha com pelo menos 6 caracteres."); return; } if (!company.is_registration_enabled) { notify("error", "Cadastro/acesso temporariamente desativado."); return; } if (plan && users.length >= plan.max_users) { notify("error", "Limite de usuários do plano atingido. Entre em contato com a Startt Facilities."); return; } runSave(setSaving, () => { setDbState((current) => ({ ...current, users: [{ id: id("usr"), company_id: company.id, name: form.name, email: form.email, password: form.password, role: form.role, is_active: true, created_at: new Date().toISOString() }, ...current.users] })); setForm(blank); setFormOpen(false); }, "Usuário criado com sucesso."); }
   function toggle(user: User) { runSave(setSaving, () => setDbState((current) => ({ ...current, users: current.users.map((item) => item.id === user.id && item.company_id === company.id ? { ...item, is_active: !item.is_active } : item) })), user.is_active ? "Usuário bloqueado com sucesso." : "Usuário desbloqueado com sucesso."); }
-  function reset(user: User) { if (!confirm(`Redefinir senha de ${user.name}?`)) return; const password = prompt("Nova senha", "123456"); if (password) runSave(setSaving, () => setDbState((current) => ({ ...current, users: current.users.map((item) => item.id === user.id && item.company_id === company.id ? { ...item, password } : item) })), "Senha redefinida com sucesso."); }
+  function reset(user: User) { if (!confirm(`Redefinir senha de ${user.name}?`)) return; const password = prompt("Nova senha"); if (password) runSave(setSaving, () => setDbState((current) => ({ ...current, users: current.users.map((item) => item.id === user.id && item.company_id === company.id ? { ...item, password } : item) })), "Senha redefinida com sucesso."); }
   return <CrudShell title="Usuários" description="Usuários internos e funções por empresa."><div className="flex justify-end"><button onClick={() => setFormOpen(true)} className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-startt-green px-4 font-black text-white shadow-lg shadow-startt-green/20"><Plus size={18} /> Novo usuário</button></div><FormDrawer open={formOpen} title="Novo usuário" description="Convide ou crie acessos internos com função por operação." onClose={() => setFormOpen(false)}><div className="grid gap-3"><Input placeholder="Nome" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><Input placeholder="E-mail" value={form.email} onChange={(value) => setForm({ ...form, email: value })} /><Input placeholder="Senha" value={form.password} onChange={(value) => setForm({ ...form, password: value })} /><Select value={form.role} onChange={(value) => setForm({ ...form, role: value as UserRole })}>{(["dono", "gerente", "caixa", "atendente"] as UserRole[]).map((role) => <option key={role}>{role}</option>)}</Select><button onClick={add} className="min-h-12 rounded-xl bg-startt-green px-4 font-black text-white">Criar usuário</button></div></FormDrawer><Table headers={["Nome", "E-mail", "Função", "Status", "Ações"]} rows={users.map((user) => [user.name, user.email, user.role, user.is_active ? "Ativo" : "Bloqueado", <div key={user.id} className="flex gap-2"><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => reset(user)}>Redefinir senha</button><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => toggle(user)}>Ativar/bloquear</button></div>])} /></CrudShell>;
 }
 
@@ -1399,8 +1614,9 @@ function MasterApp({ db, setDbState, screen, login }: { db: DatabaseApi; setDbSt
   const [session, setSession] = useState(() => localStorage.getItem(MASTER_SESSION_KEY));
   const [credentials, setCredentials] = useState({ email: "", password: "" });
   const [masterError, setMasterError] = useState("");
+  const [showMasterPassword, setShowMasterPassword] = useState(false);
   function doLogin(event: React.FormEvent) { event.preventDefault(); const found = db.master_users.find((user) => user.email === credentials.email && user.password === credentials.password && user.is_active); if (!found) { setMasterError("Login master inválido ou bloqueado."); return; } setMasterError(""); localStorage.setItem(MASTER_SESSION_KEY, found.id); setSession(found.id); window.history.pushState({}, "", "/master"); }
-  if (!session) return <main className="grid min-h-screen place-items-center bg-startt-paper p-4"><form onSubmit={doLogin} className="grid w-[min(460px,100%)] gap-4 rounded-lg border border-black/10 bg-white p-6 shadow-xl"><LogoTitle title="Admin Master" subtitle="Startt Delivery SaaS" /><Input placeholder="E-mail" value={credentials.email} onChange={(email) => setCredentials({ ...credentials, email })} /><input className="min-h-11 rounded-lg border border-black/10 px-3 outline-startt-green" placeholder="Senha" type="password" value={credentials.password} onChange={(e) => setCredentials({ ...credentials, password: e.target.value })} />{masterError && <p className="rounded-lg bg-startt-red/10 p-3 text-sm font-bold text-startt-red">{masterError}</p>}<button className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-startt-green px-4 font-black text-white"><ShieldCheck size={18} /> Entrar</button><p className="text-sm text-startt-muted">master@startt.com / 123456</p></form></main>;
+  if (!session) return <main className="grid min-h-screen place-items-center bg-[radial-gradient(circle_at_top,rgba(242,106,27,.16),transparent_34rem),#f7f4ef] p-4"><form onSubmit={doLogin} className="grid w-[min(460px,100%)] gap-4 rounded-3xl border border-black/10 bg-white p-6 shadow-2xl"><LogoTitle title="Admin Master" subtitle="Produto Startt Delivery" /><p className="text-sm leading-6 text-startt-muted">Acesse seu painel para gerenciar empresas, planos e usuários com segurança.</p><Input placeholder="E-mail" value={credentials.email} onChange={(email) => setCredentials({ ...credentials, email })} /><PasswordField placeholder="Senha" value={credentials.password} onChange={(password) => setCredentials({ ...credentials, password })} visible={showMasterPassword} onToggle={() => setShowMasterPassword((value) => !value)} />{masterError && <p className="rounded-lg bg-startt-red/10 p-3 text-sm font-bold text-startt-red">{masterError}</p>}<button className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-startt-green px-4 font-black text-white"><ShieldCheck size={18} /> Entrar</button></form></main>;
   return <main className="min-h-screen bg-startt-paper"><header className="sticky top-0 z-30 border-b border-black/10 bg-startt-paper/95 px-4 py-3"><div className="mx-auto flex w-[min(1280px,100%)] items-center justify-between"><LogoTitle title="Admin Master" subtitle="Controle geral do SaaS" /><button onClick={() => { localStorage.removeItem(MASTER_SESSION_KEY); setSession(null); }} className="rounded-lg border bg-white px-4 py-3 font-black">Sair</button></div></header><section className="mx-auto grid w-[min(1280px,calc(100%-32px))] gap-6 py-6 lg:grid-cols-[260px_1fr]"><aside className="grid gap-2 self-start rounded-lg border border-black/10 bg-white p-3">{(["dashboard", "empresas", "usuarios", "planos", "configuracoes"] as MasterScreen[]).map((item) => <a key={item} href={`/master/${item === "dashboard" ? "" : item}`} className={`rounded-lg px-3 py-3 font-black ${screen === item || (!screen && item === "dashboard") ? "bg-startt-green text-white" : "bg-startt-soft"}`}>{item}</a>)}</aside><MasterContent screen={screen || "dashboard"} db={db} setDbState={setDbState} /></section></main>;
 }
 
@@ -1415,12 +1631,48 @@ function MasterContent({ screen, db, setDbState }: { screen: MasterScreen; db: D
 
 function MasterCompanies({ db, setDbState }: { db: DatabaseApi; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
   const firstPlan = db.plans.find((plan) => plan.is_active) || db.plans[0];
-  const emptyForm = { id: "", name: "", slug: "", whatsapp: "", address: "", status: "trial" as CompanyStatus, plan_id: firstPlan?.id || "", primary_color: "#116a4b", monthly_price: String(firstPlan?.monthly_price || 49.9), due_day: "10", next_due_date: todayInput(), subscription_status: "trialing" as SubscriptionStatus, is_registration_enabled: true, admin_email: "", payment_notes: "" };
+  const emptyForm = { id: "", name: "", slug: "", whatsapp: "", address: "", status: "trial" as CompanyStatus, plan_id: firstPlan?.id || "", primary_color: "#116a4b", monthly_price: String(firstPlan?.monthly_price || 49.9), due_day: "10", next_due_date: todayInput(), subscription_status: "trialing" as SubscriptionStatus, is_registration_enabled: true, admin_email: "", admin_password: "", payment_notes: "" };
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
+  const [accessOpen, setAccessOpen] = useState(false);
+  const [accessForm, setAccessForm] = useState({ company_id: "", user_id: "", name: "", email: "", password: "", confirm_password: "", role: "dono" as UserRole, is_active: true });
+  const [showAccessPassword, setShowAccessPassword] = useState(false);
   function selectedPlan(planId = form.plan_id) { return db.plans.find((plan) => plan.id === planId) || firstPlan; }
+  function primaryUser(companyId: string) { return db.users.find((user) => user.company_id === companyId && user.role === "dono") || db.users.find((user) => user.company_id === companyId); }
   function startCreate() { setForm(emptyForm); setFormOpen(true); }
-  function startEdit(company: Company) { setForm({ id: company.id, name: company.name, slug: company.slug, whatsapp: company.whatsapp, address: company.address, status: company.status, plan_id: company.plan_id, primary_color: company.primary_color, monthly_price: String(company.monthly_price), due_day: String(company.due_day), next_due_date: company.next_due_date, subscription_status: company.subscription_status, is_registration_enabled: company.is_registration_enabled, admin_email: "", payment_notes: company.payment_notes }); setFormOpen(true); }
+  function startEdit(company: Company) { setForm({ id: company.id, name: company.name, slug: company.slug, whatsapp: company.whatsapp, address: company.address, status: company.status, plan_id: company.plan_id, primary_color: company.primary_color, monthly_price: String(company.monthly_price), due_day: String(company.due_day), next_due_date: company.next_due_date, subscription_status: company.subscription_status, is_registration_enabled: company.is_registration_enabled, admin_email: "", admin_password: "", payment_notes: company.payment_notes }); setFormOpen(true); }
+  function openAccess(company: Company) {
+    const user = primaryUser(company.id);
+    setAccessForm({ company_id: company.id, user_id: user?.id || "", name: user?.name || "Admin", email: user?.email || "", password: "", confirm_password: "", role: user?.role || "dono", is_active: user?.is_active ?? true });
+    setShowAccessPassword(false);
+    setAccessOpen(true);
+  }
+  function saveAccess(event: React.FormEvent) {
+    event.preventDefault();
+    if (!accessForm.email.trim()) {
+      notify("error", "Informe o login/e-mail da lancheria.");
+      return;
+    }
+    if (!accessForm.user_id && !accessForm.password) {
+      notify("error", "Defina uma senha inicial para a lancheria.");
+      return;
+    }
+    if (accessForm.password || accessForm.confirm_password) {
+      if (accessForm.password.length < 6) {
+        notify("error", "A nova senha precisa ter pelo menos 6 caracteres.");
+        return;
+      }
+      if (accessForm.password !== accessForm.confirm_password) {
+        notify("error", "A confirmação da senha não confere.");
+        return;
+      }
+    }
+    const created = new Date().toISOString();
+    const user: User = { id: accessForm.user_id || id("usr"), company_id: accessForm.company_id, name: accessForm.name || "Admin", email: accessForm.email.trim(), password: accessForm.password || primaryUser(accessForm.company_id)?.password || "", role: accessForm.role, is_active: accessForm.is_active, created_at: primaryUser(accessForm.company_id)?.created_at || created };
+    setDbState((current) => ({ ...current, users: accessForm.user_id ? current.users.map((item) => item.id === accessForm.user_id && item.company_id === accessForm.company_id ? user : item) : [user, ...current.users] }));
+    setAccessOpen(false);
+    notify("success", "Acesso da lancheria atualizado com sucesso.");
+  }
   function saveCompany(event: React.FormEvent) {
     event.preventDefault();
     if (!form.name || !form.slug || !form.whatsapp || !form.address || !form.plan_id || !form.primary_color) {
@@ -1435,26 +1687,46 @@ function MasterCompanies({ db, setDbState }: { db: DatabaseApi; setDbState: Reac
       notify("error", "Informe um valor mensal válido.");
       return;
     }
+    if (!form.id && form.admin_email && form.admin_password.length < 6) {
+      notify("error", "Informe uma senha inicial com pelo menos 6 caracteres para o admin da lancheria.");
+      return;
+    }
     const plan = selectedPlan();
     const created = new Date().toISOString();
     const companyId = form.id || id("cmp");
     const previous = db.companies.find((item) => item.id === form.id);
     const company: Company = { id: companyId, name: form.name, slug: form.slug, logo_url: previous?.logo_url || "", banner_url: previous?.banner_url || previous?.hero_image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1600&q=80", whatsapp: form.whatsapp, address: form.address, hero_image: previous?.hero_image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1600&q=80", primary_color: form.primary_color, minimum_order: previous?.minimum_order || 25, estimated_delivery_time: previous?.estimated_delivery_time || "35-45 min", is_open: previous?.is_open ?? true, delivery_enabled: previous?.delivery_enabled ?? true, pickup_enabled: previous?.pickup_enabled ?? true, status: form.status, plan: plan?.name || "Start", is_registration_enabled: form.is_registration_enabled, plan_id: form.plan_id, subscription_status: form.subscription_status, monthly_price: parseMoney(form.monthly_price), due_day: Number(form.due_day), next_due_date: form.next_due_date, last_payment_date: previous?.last_payment_date || "", payment_notes: form.payment_notes, footer_message: previous?.footer_message || "produzido por Startt Facilities", opening_hours: previous?.opening_hours || "Aberto hoje", created_at: previous?.created_at || created };
-    setDbState((current) => ({ ...current, companies: form.id ? current.companies.map((item) => item.id === form.id ? company : item) : [company, ...current.companies], settings: form.id ? current.settings : [{ id: id("set"), company_id: companyId, critical_locked: false }, ...current.settings], print_settings: form.id ? current.print_settings : [{ company_id: companyId, auto_print_orders: false, auto_print_cash_sales: false, printer_name: "", paper_width: "80mm", copies: 1, footer_text: "Startt Delivery — produzido por Startt Facilities" }, ...current.print_settings], users: !form.id && form.admin_email ? [{ id: id("usr"), company_id: companyId, name: "Admin inicial", email: form.admin_email, password: "123456", role: "dono", is_active: true, created_at: created }, ...current.users] : current.users }));
+    setDbState((current) => ({ ...current, companies: form.id ? current.companies.map((item) => item.id === form.id ? company : item) : [company, ...current.companies], settings: form.id ? current.settings : [{ id: id("set"), company_id: companyId, critical_locked: false }, ...current.settings], print_settings: form.id ? current.print_settings : [{ company_id: companyId, auto_print_orders: false, auto_print_cash_sales: false, printer_name: "", paper_width: "80mm", copies: 1, footer_text: "Startt Delivery — produzido por Startt Facilities" }, ...current.print_settings], users: !form.id && form.admin_email ? [{ id: id("usr"), company_id: companyId, name: "Admin inicial", email: form.admin_email, password: form.admin_password, role: "dono", is_active: true, created_at: created }, ...current.users] : current.users }));
     setFormOpen(false);
     notify("success", form.id ? "Empresa atualizada com sucesso." : "Empresa criada com sucesso.");
   }
   function updateCompany(companyId: string, patch: Partial<Company>) { setDbState((current) => ({ ...current, companies: current.companies.map((company) => company.id === companyId ? { ...company, ...patch } : company) })); notify("success", "Empresa atualizada."); }
   function deleteCompany(company: Company) { if (!confirm(`Excluir ${company.name} e TODOS os dados vinculados?`)) return; setDbState((current) => ({ ...current, companies: current.companies.filter((item) => item.id !== company.id), users: current.users.filter((item) => item.company_id !== company.id), categories: current.categories.filter((item) => item.company_id !== company.id), products: current.products.filter((item) => item.company_id !== company.id), orders: current.orders.filter((item) => item.company_id !== company.id), order_items: current.order_items.filter((item) => item.company_id !== company.id), customers: current.customers.filter((item) => item.company_id !== company.id), voucher_brands: current.voucher_brands.filter((item) => item.company_id !== company.id), delivery_zones: current.delivery_zones.filter((item) => item.company_id !== company.id), coupons: current.coupons.filter((item) => item.company_id !== company.id), settings: current.settings.filter((item) => item.company_id !== company.id), cash_sales: current.cash_sales.filter((item) => item.company_id !== company.id), print_settings: current.print_settings.filter((item) => item.company_id !== company.id), reports: current.reports.filter((item) => item.company_id !== company.id) })); notify("success", "Empresa e dados vinculados foram excluídos."); }
-  return <CrudShell title="Empresas" description="CRUD completo, controle de acesso e financeiro por empresa."><div className="flex flex-wrap justify-end gap-2"><button onClick={startCreate} className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-startt-green px-4 font-black text-white shadow-lg shadow-startt-green/20"><Plus size={18} /> Nova empresa</button></div><FormDrawer open={formOpen} title={form.id ? "Editar empresa" : "Nova empresa"} description="Controle dados comerciais, plano, assinatura e usuário inicial da lancheria." onClose={() => setFormOpen(false)}><form onSubmit={saveCompany} className="grid gap-3"><div className="grid gap-3 sm:grid-cols-2"><Input placeholder="Nome" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><Input placeholder="Slug" value={form.slug} onChange={(value) => setForm({ ...form, slug: value })} /><Input placeholder="WhatsApp" value={form.whatsapp} onChange={(value) => setForm({ ...form, whatsapp: value })} /><Input placeholder="Endereço" value={form.address} onChange={(value) => setForm({ ...form, address: value })} /><Select value={form.status} onChange={(value) => setForm({ ...form, status: value as CompanyStatus })}><option>trial</option><option>active</option><option>blocked</option><option>canceled</option></Select><Select value={form.plan_id} onChange={(value) => { const plan = selectedPlan(value); setForm({ ...form, plan_id: value, monthly_price: String(plan?.monthly_price || form.monthly_price) }); }}>{db.plans.filter((plan) => plan.is_active || plan.id === form.plan_id).map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</Select><Input placeholder="Cor principal" value={form.primary_color} onChange={(value) => setForm({ ...form, primary_color: value })} /><Input placeholder="Valor mensal" value={form.monthly_price} onChange={(value) => setForm({ ...form, monthly_price: value })} /><Input placeholder="Dia vencimento" value={form.due_day} onChange={(value) => setForm({ ...form, due_day: value })} /><Input type="date" placeholder="Próxima data" value={form.next_due_date} onChange={(value) => setForm({ ...form, next_due_date: value })} /><Select value={form.subscription_status} onChange={(value) => setForm({ ...form, subscription_status: value as SubscriptionStatus })}><option>trialing</option><option>active</option><option>overdue</option><option>canceled</option></Select><Input placeholder="Admin inicial opcional" value={form.admin_email} onChange={(value) => setForm({ ...form, admin_email: value })} /></div><Input placeholder="Observações financeiras" value={form.payment_notes} onChange={(value) => setForm({ ...form, payment_notes: value })} /><label className="flex items-center gap-2 rounded-2xl bg-startt-paper p-4 font-bold"><input type="checkbox" checked={form.is_registration_enabled} onChange={(event) => setForm({ ...form, is_registration_enabled: event.target.checked })} /> Cadastro/acesso habilitado</label><button className="min-h-12 rounded-xl bg-startt-green px-4 font-black text-white shadow-lg shadow-startt-green/20">{form.id ? "Salvar alterações" : "Criar empresa"}</button></form></FormDrawer><Table headers={["Empresa", "Slug", "Plano", "Assinatura", "Mensal", "Vencimento", "Ações"]} rows={db.companies.map((company) => [company.name, `/${company.slug}`, db.plans.find((plan) => plan.id === company.plan_id)?.name || company.plan, company.subscription_status, money(company.monthly_price), `${company.due_day} • ${company.next_due_date}`, <div key={company.id} className="flex flex-wrap gap-2"><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => startEdit(company)}>Editar</button><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { status: company.status === "blocked" ? "active" : "blocked" })}>{company.status === "blocked" ? "Desbloquear" : "Bloquear"}</button><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { subscription_status: "active", status: company.status === "blocked" ? "active" : company.status, last_payment_date: todayInput(), payment_notes: "Marcado como pago pelo Master." })}>Marcar pago</button><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { subscription_status: "overdue", payment_notes: "Marcado como inadimplente pelo Master." })}>Inadimplente</button><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { status: "canceled", subscription_status: "canceled" })}>Cancelar</button><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { status: "active", subscription_status: "active" })}>Reativar</button><a className="rounded-xl border px-3 py-2 font-bold" href={`/${company.slug}/admin`}>Simular</a><button className="rounded-xl bg-startt-red px-3 py-2 font-bold text-white" onClick={() => deleteCompany(company)}>Excluir</button></div>])} /></CrudShell>;
+  return <CrudShell title="Empresas" description="CRUD completo, controle de acesso e financeiro por empresa."><div className="flex flex-wrap justify-end gap-2"><button onClick={startCreate} className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-startt-green px-4 font-black text-white shadow-lg shadow-startt-green/20"><Plus size={18} /> Nova empresa</button></div><FormDrawer open={formOpen} title={form.id ? "Editar empresa" : "Nova empresa"} description="Controle dados comerciais, plano, assinatura e usuário inicial da lancheria." onClose={() => setFormOpen(false)}><form onSubmit={saveCompany} className="grid gap-3"><div className="grid gap-3 sm:grid-cols-2"><Input placeholder="Nome" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><Input placeholder="Slug" value={form.slug} onChange={(value) => setForm({ ...form, slug: value })} /><Input placeholder="WhatsApp" value={form.whatsapp} onChange={(value) => setForm({ ...form, whatsapp: value })} /><Input placeholder="Endereço" value={form.address} onChange={(value) => setForm({ ...form, address: value })} /><Select value={form.status} onChange={(value) => setForm({ ...form, status: value as CompanyStatus })}><option>trial</option><option>active</option><option>blocked</option><option>canceled</option></Select><Select value={form.plan_id} onChange={(value) => { const plan = selectedPlan(value); setForm({ ...form, plan_id: value, monthly_price: String(plan?.monthly_price || form.monthly_price) }); }}>{db.plans.filter((plan) => plan.is_active || plan.id === form.plan_id).map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</Select><Input placeholder="Cor principal" value={form.primary_color} onChange={(value) => setForm({ ...form, primary_color: value })} /><Input placeholder="Valor mensal" value={form.monthly_price} onChange={(value) => setForm({ ...form, monthly_price: value })} /><Input placeholder="Dia vencimento" value={form.due_day} onChange={(value) => setForm({ ...form, due_day: value })} /><Input type="date" placeholder="Próxima data" value={form.next_due_date} onChange={(value) => setForm({ ...form, next_due_date: value })} /><Select value={form.subscription_status} onChange={(value) => setForm({ ...form, subscription_status: value as SubscriptionStatus })}><option>trialing</option><option>active</option><option>overdue</option><option>canceled</option></Select><Input placeholder="Admin inicial opcional" value={form.admin_email} onChange={(value) => setForm({ ...form, admin_email: value })} /><Input placeholder="Senha inicial do admin" type="password" value={form.admin_password} onChange={(value) => setForm({ ...form, admin_password: value })} /></div><Input placeholder="Observações financeiras" value={form.payment_notes} onChange={(value) => setForm({ ...form, payment_notes: value })} /><label className="flex items-center gap-2 rounded-2xl bg-startt-paper p-4 font-bold"><input type="checkbox" checked={form.is_registration_enabled} onChange={(event) => setForm({ ...form, is_registration_enabled: event.target.checked })} /> Cadastro/acesso habilitado</label><button className="min-h-12 rounded-xl bg-startt-green px-4 font-black text-white shadow-lg shadow-startt-green/20">{form.id ? "Salvar alterações" : "Criar empresa"}</button></form></FormDrawer><FormDrawer open={accessOpen} title="Gerenciar acesso" description="Edite o login e resete a senha da lancheria sem perder o vínculo com a empresa." onClose={() => setAccessOpen(false)}><form onSubmit={saveAccess} className="grid gap-4"><Input placeholder="Nome do usuário" value={accessForm.name} onChange={(value) => setAccessForm({ ...accessForm, name: value })} /><Input placeholder="Login/e-mail" value={accessForm.email} onChange={(value) => setAccessForm({ ...accessForm, email: value })} /><Select value={accessForm.role} onChange={(value) => setAccessForm({ ...accessForm, role: value as UserRole })}>{(["dono", "gerente", "caixa", "atendente"] as UserRole[]).map((role) => <option key={role}>{role}</option>)}</Select><div className="grid gap-2"><label className="text-sm font-bold">Nova senha</label><div className="flex min-h-12 overflow-hidden rounded-xl border border-startt-border bg-white shadow-sm focus-within:border-startt-green focus-within:shadow-input"><input className="min-w-0 flex-1 px-3 text-sm outline-none" type={showAccessPassword ? "text" : "password"} placeholder="Deixe vazio para manter" value={accessForm.password} onChange={(event) => setAccessForm({ ...accessForm, password: event.target.value })} /><button type="button" className="grid w-12 place-items-center text-startt-muted" onClick={() => setShowAccessPassword((value) => !value)}>{showAccessPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></div><input className="min-h-12 rounded-xl border border-startt-border bg-white px-3 text-sm shadow-sm outline-startt-green transition focus:border-startt-green focus:shadow-input" type={showAccessPassword ? "text" : "password"} placeholder="Confirmar nova senha" value={accessForm.confirm_password} onChange={(event) => setAccessForm({ ...accessForm, confirm_password: event.target.value })} /><label className="flex min-h-12 items-center gap-2 rounded-2xl bg-startt-paper px-4 font-bold"><input type="checkbox" checked={accessForm.is_active} onChange={(event) => setAccessForm({ ...accessForm, is_active: event.target.checked })} /> Usuário ativo</label><button className="min-h-12 rounded-xl bg-startt-green px-4 font-black text-white">Salvar acesso</button></form></FormDrawer><Table headers={["Empresa", "Slug", "Plano", "Assinatura", "Mensal", "Vencimento", "Ações"]} rows={db.companies.map((company) => [company.name, `/${company.slug}`, db.plans.find((plan) => plan.id === company.plan_id)?.name || company.plan, company.subscription_status, money(company.monthly_price), `${company.due_day} • ${company.next_due_date}`, <div key={company.id} className="flex flex-wrap gap-2"><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => startEdit(company)}>Editar</button><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => openAccess(company)}>Gerenciar acesso</button><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { status: company.status === "blocked" ? "active" : "blocked" })}>{company.status === "blocked" ? "Desbloquear" : "Bloquear"}</button><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { subscription_status: "active", status: company.status === "blocked" ? "active" : company.status, last_payment_date: todayInput(), payment_notes: "Marcado como pago pelo Master." })}>Marcar pago</button><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { subscription_status: "overdue", payment_notes: "Marcado como inadimplente pelo Master." })}>Inadimplente</button><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { status: "canceled", subscription_status: "canceled" })}>Cancelar</button><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { status: "active", subscription_status: "active" })}>Reativar</button><a className="rounded-xl border px-3 py-2 font-bold" href={`/${company.slug}/admin`}>Simular</a><button className="rounded-xl bg-startt-red px-3 py-2 font-bold text-white" onClick={() => deleteCompany(company)}>Excluir</button></div>])} /></CrudShell>;
 }
 
 function MasterUsers({ db, setDbState }: { db: DatabaseApi; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
   const [companyId, setCompanyId] = useState("todos");
-  const [form, setForm] = useState({ company_id: db.companies[0]?.id || "", name: "", email: "", password: "123456", role: "dono" as UserRole });
+  const [form, setForm] = useState({ company_id: db.companies[0]?.id || "", name: "", email: "", password: "", role: "dono" as UserRole });
+  const [resetUser, setResetUser] = useState<User | null>(null);
+  const [resetForm, setResetForm] = useState({ email: "", password: "", confirm_password: "", role: "dono" as UserRole, is_active: true });
+  const [showResetPassword, setShowResetPassword] = useState(false);
   const users = db.users.filter((user) => companyId === "todos" || user.company_id === companyId);
-  function addUser() { if (!form.email || !form.company_id) return; setDbState((current) => ({ ...current, users: [{ id: id("usr"), company_id: form.company_id, name: form.name, email: form.email, password: form.password, role: form.role, is_active: true, created_at: new Date().toISOString() }, ...current.users] })); setForm({ ...form, name: "", email: "", password: "123456" }); }
-  return <CrudShell title="Usuários" description="Usuários de todas as empresas, com filtro, criação, bloqueio e redefinição de senha."><div className="grid gap-3 rounded-lg border bg-white p-4 md:grid-cols-6"><Select value={form.company_id} onChange={(value) => setForm({ ...form, company_id: value })}>{db.companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</Select><Input placeholder="Nome" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><Input placeholder="E-mail" value={form.email} onChange={(value) => setForm({ ...form, email: value })} /><Input placeholder="Senha" value={form.password} onChange={(value) => setForm({ ...form, password: value })} /><Select value={form.role} onChange={(value) => setForm({ ...form, role: value as UserRole })}>{(["dono", "gerente", "caixa", "atendente"] as UserRole[]).map((role) => <option key={role}>{role}</option>)}</Select><button onClick={addUser} className="rounded-lg bg-startt-green px-4 font-black text-white">Criar usuário</button></div><Select value={companyId} onChange={setCompanyId}><option value="todos">Todas as empresas</option>{db.companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</Select><Table headers={["Nome", "E-mail", "Empresa", "Função", "Status", "Ações"]} rows={users.map((user) => [user.name, user.email, db.companies.find((c) => c.id === user.company_id)?.name || "-", user.role, user.is_active ? "Ativo" : "Bloqueado", <div key={user.id} className="flex gap-2"><button className="rounded-lg border px-3 py-2 font-bold" onClick={() => setDbState((current) => ({ ...current, users: current.users.map((item) => item.id === user.id ? { ...item, is_active: !item.is_active } : item) }))}>Ativar/bloquear</button><button className="rounded-lg border px-3 py-2 font-bold" onClick={() => { const password = prompt("Nova senha", "123456"); if (password) setDbState((current) => ({ ...current, users: current.users.map((item) => item.id === user.id ? { ...item, password } : item) })); }}>Redefinir senha</button></div>])} /></CrudShell>;
+  function addUser() { if (!form.email || !form.company_id || form.password.length < 6) { notify("error", "Informe empresa, e-mail e senha com pelo menos 6 caracteres."); return; } setDbState((current) => ({ ...current, users: [{ id: id("usr"), company_id: form.company_id, name: form.name || "Admin", email: form.email, password: form.password, role: form.role, is_active: true, created_at: new Date().toISOString() }, ...current.users] })); setForm({ ...form, name: "", email: "", password: "" }); notify("success", "Usuário criado com sucesso."); }
+  function openReset(user: User) { setResetUser(user); setResetForm({ email: user.email, password: "", confirm_password: "", role: user.role, is_active: user.is_active }); setShowResetPassword(false); }
+  function saveReset(event: React.FormEvent) {
+    event.preventDefault();
+    if (!resetUser) return;
+    if (!resetForm.email.trim()) { notify("error", "Informe o login/e-mail."); return; }
+    if (resetForm.password || resetForm.confirm_password) {
+      if (resetForm.password.length < 6) { notify("error", "A nova senha precisa ter pelo menos 6 caracteres."); return; }
+      if (resetForm.password !== resetForm.confirm_password) { notify("error", "A confirmação da senha não confere."); return; }
+    }
+    setDbState((current) => ({ ...current, users: current.users.map((item) => item.id === resetUser.id ? { ...item, email: resetForm.email.trim(), password: resetForm.password || item.password, role: resetForm.role, is_active: resetForm.is_active } : item) }));
+    setResetUser(null);
+    notify("success", "Login/senha da lancheria atualizados.");
+  }
+  return <CrudShell title="Usuários" description="Usuários de todas as empresas, com filtro, criação, bloqueio e redefinição de senha."><div className="grid gap-3 rounded-2xl border border-black/10 bg-white p-4 md:grid-cols-6"><Select value={form.company_id} onChange={(value) => setForm({ ...form, company_id: value })}>{db.companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</Select><Input placeholder="Nome" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><Input placeholder="E-mail" value={form.email} onChange={(value) => setForm({ ...form, email: value })} /><Input placeholder="Senha" value={form.password} onChange={(value) => setForm({ ...form, password: value })} /><Select value={form.role} onChange={(value) => setForm({ ...form, role: value as UserRole })}>{(["dono", "gerente", "caixa", "atendente"] as UserRole[]).map((role) => <option key={role}>{role}</option>)}</Select><button onClick={addUser} className="min-h-12 rounded-xl bg-startt-green px-4 font-black text-white">Criar usuário</button></div><Select value={companyId} onChange={setCompanyId}><option value="todos">Todas as empresas</option>{db.companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</Select><FormDrawer open={Boolean(resetUser)} title="Editar login e senha" description={resetUser ? `Empresa: ${db.companies.find((company) => company.id === resetUser.company_id)?.name || "-"}` : "Acesso da lancheria"} onClose={() => setResetUser(null)}><form onSubmit={saveReset} className="grid gap-4"><Input placeholder="Login/e-mail" value={resetForm.email} onChange={(value) => setResetForm({ ...resetForm, email: value })} /><Select value={resetForm.role} onChange={(value) => setResetForm({ ...resetForm, role: value as UserRole })}>{(["dono", "gerente", "caixa", "atendente"] as UserRole[]).map((role) => <option key={role}>{role}</option>)}</Select><div className="flex min-h-12 overflow-hidden rounded-xl border border-startt-border bg-white shadow-sm"><input className="min-w-0 flex-1 px-3 text-sm outline-none" type={showResetPassword ? "text" : "password"} placeholder="Nova senha" value={resetForm.password} onChange={(event) => setResetForm({ ...resetForm, password: event.target.value })} /><button type="button" className="grid w-12 place-items-center text-startt-muted" onClick={() => setShowResetPassword((value) => !value)}>{showResetPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div><input className="min-h-12 rounded-xl border border-startt-border bg-white px-3 text-sm shadow-sm outline-startt-green transition focus:border-startt-green focus:shadow-input" type={showResetPassword ? "text" : "password"} placeholder="Confirmar nova senha" value={resetForm.confirm_password} onChange={(event) => setResetForm({ ...resetForm, confirm_password: event.target.value })} /><label className="flex min-h-12 items-center gap-2 rounded-2xl bg-startt-paper px-4 font-bold"><input type="checkbox" checked={resetForm.is_active} onChange={(event) => setResetForm({ ...resetForm, is_active: event.target.checked })} /> Usuário ativo</label><button className="min-h-12 rounded-xl bg-startt-green px-4 font-black text-white">Salvar acesso</button></form></FormDrawer><Table headers={["Nome", "E-mail", "Empresa", "Função", "Status", "Ações"]} rows={users.map((user) => [user.name, user.email, db.companies.find((c) => c.id === user.company_id)?.name || "-", user.role, user.is_active ? "Ativo" : "Bloqueado", <div key={user.id} className="flex flex-wrap gap-2"><button className="rounded-lg border px-3 py-2 font-bold" onClick={() => setDbState((current) => ({ ...current, users: current.users.map((item) => item.id === user.id ? { ...item, is_active: !item.is_active } : item) }))}>Ativar/bloquear</button><button className="rounded-lg border px-3 py-2 font-bold" onClick={() => openReset(user)}>Editar login/senha</button></div>])} /></CrudShell>;
 }
 
 function MasterPlans({ db, setDbState }: { db: DatabaseApi; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
@@ -1491,7 +1763,7 @@ function MasterUserControls({ db, setDbState }: { db: DatabaseApi; setDbState: R
   }
   function resetMaster(userId: string) {
     if (!confirm("Redefinir senha deste usuário master?")) return;
-    const password = prompt("Nova senha", "123456");
+    const password = prompt("Nova senha");
     if (!password) return;
     updateMaster(userId, { password });
   }
@@ -1556,9 +1828,33 @@ function CompanyInfoModal({ company, onClose }: { company: Company; onClose: () 
 function CrudShell({ title, description, children }: { title: string; description: string; children: React.ReactNode }) { return <section className="grid gap-5"><div><h1 className="text-2xl font-black tracking-tight md:text-3xl">{title}</h1><p className="mt-1 max-w-3xl text-startt-muted">{description}</p></div>{children}</section>; }
 function Panel({ title, children }: { title: string; children: React.ReactNode }) { return <section className="grid gap-4 rounded-3xl border border-black/10 bg-white p-5 shadow-sm"><h2 className="text-lg font-black">{title}</h2>{children}</section>; }
 function Input({ value, onChange, placeholder, type = "text" }: { value: string; onChange: (value: string) => void; placeholder: string; type?: string }) { return <input type={type} className="min-h-12 rounded-xl border border-startt-border bg-white px-3 text-sm shadow-sm outline-startt-green transition focus:border-startt-green focus:shadow-input" placeholder={placeholder} value={value} onChange={(event) => onChange(event.target.value)} />; }
+function PasswordField({ value, onChange, placeholder, visible, onToggle }: { value: string; onChange: (value: string) => void; placeholder: string; visible: boolean; onToggle: () => void }) { return <div className="flex min-h-12 overflow-hidden rounded-xl border border-startt-border bg-white shadow-sm focus-within:border-startt-green focus-within:shadow-input"><input className="min-w-0 flex-1 px-3 text-sm outline-none" type={visible ? "text" : "password"} placeholder={placeholder} value={value} onChange={(event) => onChange(event.target.value)} /><button type="button" className="grid w-12 place-items-center text-startt-muted" onClick={onToggle} aria-label={visible ? "Ocultar senha" : "Mostrar senha"}>{visible ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>; }
 function Select({ value, onChange, children }: { value: string; onChange: (value: string) => void; children: React.ReactNode }) { return <select className="min-h-12 rounded-xl border border-startt-border bg-white px-3 text-sm shadow-sm outline-startt-green transition focus:border-startt-green focus:shadow-input" value={value} onChange={(event) => onChange(event.target.value)}>{children}</select>; }
 function Toggle({ active, disabled, onClick, children }: { active: boolean; disabled?: boolean; onClick: () => void; children: React.ReactNode }) { return <button disabled={disabled} onClick={onClick} className={`min-h-12 rounded-xl border px-3 font-black disabled:opacity-40 ${active ? "border-startt-green bg-startt-green text-white shadow-lg shadow-startt-green/20" : "border-startt-border bg-white"}`}>{children}</button>; }
-function Table({ headers, rows }: { headers: string[]; rows: Array<Array<React.ReactNode>> }) { return <div className="overflow-hidden rounded-2xl border border-black/10 bg-white shadow-card"><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-startt-soft text-xs uppercase text-startt-muted"><tr>{headers.map((header) => <th key={header} className="px-4 py-3 font-black">{header}</th>)}</tr></thead><tbody>{rows.length ? rows.map((row, i) => <tr key={i} className="sd-tr border-t border-black/10">{row.map((cell, j) => <td key={j} className="p-4 align-middle">{cell}</td>)}</tr>) : <tr className="border-t border-black/10"><td className="p-8 text-center text-startt-muted" colSpan={headers.length}>Nenhum registro encontrado ainda.</td></tr>}</tbody></table></div></div>; }
+function Table({ headers, rows }: { headers: string[]; rows: Array<Array<React.ReactNode>> }) {
+  return (
+    <div className="rounded-2xl border border-black/10 bg-white shadow-card">
+      <div className="grid gap-3 p-3 md:hidden">
+        {rows.length ? rows.map((row, i) => (
+          <article key={i} className="grid gap-3 rounded-2xl border border-black/10 bg-startt-paper p-3">
+            {row.map((cell, j) => (
+              <div key={j} className={j === row.length - 1 ? "grid gap-2" : "grid gap-1"}>
+                <span className="text-[11px] font-black uppercase text-startt-muted">{headers[j]}</span>
+                <div className="min-w-0 text-sm font-bold text-startt-ink">{cell}</div>
+              </div>
+            ))}
+          </article>
+        )) : <div className="p-6 text-center text-startt-muted">Nenhum registro encontrado ainda.</div>}
+      </div>
+      <div className="hidden overflow-x-auto md:block">
+        <table className="w-full min-w-[760px] text-left text-sm">
+          <thead className="bg-startt-soft text-xs uppercase text-startt-muted"><tr>{headers.map((header) => <th key={header} className="px-4 py-3 font-black">{header}</th>)}</tr></thead>
+          <tbody>{rows.length ? rows.map((row, i) => <tr key={i} className="sd-tr border-t border-black/10">{row.map((cell, j) => <td key={j} className="p-4 align-middle">{cell}</td>)}</tr>) : <tr className="border-t border-black/10"><td className="p-8 text-center text-startt-muted" colSpan={headers.length}>Nenhum registro encontrado ainda.</td></tr>}</tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 function Actions({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) { return <div className="flex flex-wrap gap-2"><button className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-black shadow-sm" onClick={onEdit}>Editar</button><button className="rounded-xl bg-startt-red px-3 py-2 text-sm font-black text-white shadow-sm" onClick={onDelete}>Excluir</button></div>; }
 function InlineAdd({ value, setValue, onAdd, placeholder }: { value: string; setValue: (value: string) => void; onAdd: () => void; placeholder: string }) { return <div className="flex flex-col gap-2 rounded-2xl border border-black/10 bg-white p-4 shadow-card sm:flex-row"><Input value={value} onChange={setValue} placeholder={placeholder} /><button onClick={onAdd} className="min-h-12 rounded-xl bg-startt-green px-4 font-black text-white shadow-lg shadow-startt-green/20">Cadastrar</button></div>; }
 function FormDrawer({ open, title, description, onClose, children }: { open: boolean; title: string; description: string; onClose: () => void; children: React.ReactNode }) {
@@ -1648,3 +1944,4 @@ function groupSum<T extends Record<string, unknown>>(items: T[], key: keyof T) {
 function sumByDay(items: Array<{ date: string; total: number }>) { return items.reduce<Record<string, number>>((acc, item) => { const day = item.date.slice(0, 10); acc[day] = (acc[day] || 0) + item.total; return acc; }, {}); }
 
 createRoot(document.getElementById("root")!).render(<App />);
+

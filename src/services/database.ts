@@ -36,6 +36,15 @@ const tableNames = [
   "reports",
 ] as const;
 
+const defaultMasterUser = {
+  id: "mst_1",
+  name: "Admin Master",
+  email: "master@startt.com",
+  password: "Achieve123",
+  role: "master" as const,
+  is_active: true,
+};
+
 type TableName = (typeof tableNames)[number];
 type SnapshotKey = keyof MockDatabaseState;
 
@@ -64,10 +73,17 @@ function withDefaults(parsed: Partial<MockDatabaseState> = {}): MockDatabaseStat
     ...product,
     ingredients: product.ingredients || product.description || "",
   }));
-  const master_users = (parsed.master_users || initialMockDatabase.master_users).map((user) => ({
-    ...user,
-    is_active: user.is_active ?? true,
-  }));
+  const masterSource = parsed.master_users?.length ? parsed.master_users : initialMockDatabase.master_users;
+  const hasDefaultMaster = masterSource.some((user) => user.email.toLowerCase() === defaultMasterUser.email);
+  const master_users = (hasDefaultMaster ? masterSource : [defaultMasterUser, ...masterSource]).map((user) => {
+    if (user.email.toLowerCase() === defaultMasterUser.email || user.id === defaultMasterUser.id) {
+      return { ...user, ...defaultMasterUser };
+    }
+    return {
+      ...user,
+      is_active: user.is_active ?? true,
+    };
+  });
   const delivery_zones = [
     ...(parsed.delivery_zones || []),
     ...initialMockDatabase.delivery_zones.filter((seedZone) => !(parsed.delivery_zones || []).some((zone) => zone.company_id === seedZone.company_id && zone.neighborhood.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() === seedZone.neighborhood.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase())),
@@ -97,7 +113,11 @@ function withDefaults(parsed: Partial<MockDatabaseState> = {}): MockDatabaseStat
     change_amount: order.change_amount || order.calculated_change || 0,
     payment_details: order.payment_details || order.payment_method,
   }));
-  const voucher_brands = parsed.voucher_brands || initialMockDatabase.voucher_brands;
+  const voucher_brands = (parsed.voucher_brands || initialMockDatabase.voucher_brands).map((brand) => ({
+    ...brand,
+    created_at: brand.created_at || new Date().toISOString(),
+    updated_at: brand.updated_at || brand.created_at || new Date().toISOString(),
+  }));
 
   return { ...initialMockDatabase, ...parsed, plans, companies, products, master_users, delivery_zones, customers, orders, voucher_brands };
 }
