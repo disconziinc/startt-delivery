@@ -114,8 +114,10 @@ const SAVE_DELAY = 250;
 const SITE_URL = "https://starttdelivery.com.br";
 const DEFAULT_SEO_TITLE = "Startt Delivery — Seu cardápio do seu jeito";
 const DEFAULT_SEO_DESCRIPTION = "Sistema profissional de cardápio digital para lancherias. Receba pedidos pelo WhatsApp, tenha seu próprio delivery e gerencie tudo em um painel moderno.";
-const DEFAULT_SEO_IMAGE = `${SITE_URL}/startt-logo.png`;
-const DEFAULT_SEO_KEYWORDS = "cardápio digital, delivery whatsapp, sistema para lancheria, delivery próprio, sistema delivery, cardápio online, startt delivery, delivery porto alegre, painel para lancheria, sistema para hamburgueria";
+const DEFAULT_OG_DESCRIPTION = "Crie seu cardápio digital, receba pedidos pelo WhatsApp e gerencie sua lancheria em um painel profissional.";
+const DEFAULT_TWITTER_DESCRIPTION = "Cardápio digital premium para lancherias receberem pedidos direto no WhatsApp.";
+const DEFAULT_SEO_IMAGE = `${SITE_URL}/og-image.png`;
+const DEFAULT_SEO_KEYWORDS = "cardápio digital, delivery whatsapp, sistema para lancheria, delivery próprio, sistema delivery, cardápio online, Startt Delivery, delivery Porto Alegre, painel para lancheria, sistema para hamburgueria, pedidos via WhatsApp";
 
 const adminNav: Array<{ id: AdminScreen; label: string; icon: React.ReactNode }> = [
   { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={18} /> },
@@ -223,17 +225,18 @@ function applySeo({ title, description = DEFAULT_SEO_DESCRIPTION, path = "/", im
   document.title = title;
   upsertMeta('meta[name="description"]', { name: "description", content: description });
   upsertMeta('meta[name="keywords"]', { name: "keywords", content: DEFAULT_SEO_KEYWORDS });
+  upsertMeta('meta[name="author"]', { name: "author", content: "Startt Facilities" });
   upsertMeta('meta[name="robots"]', { name: "robots", content: "index, follow" });
   upsertCanonical(url);
   upsertMeta('meta[property="og:title"]', { property: "og:title", content: title });
-  upsertMeta('meta[property="og:description"]', { property: "og:description", content: description });
+  upsertMeta('meta[property="og:description"]', { property: "og:description", content: DEFAULT_OG_DESCRIPTION });
   upsertMeta('meta[property="og:image"]', { property: "og:image", content: imageUrl });
   upsertMeta('meta[property="og:type"]', { property: "og:type", content: type });
   upsertMeta('meta[property="og:url"]', { property: "og:url", content: url });
   upsertMeta('meta[property="og:site_name"]', { property: "og:site_name", content: "Startt Delivery" });
   upsertMeta('meta[name="twitter:card"]', { name: "twitter:card", content: "summary_large_image" });
   upsertMeta('meta[name="twitter:title"]', { name: "twitter:title", content: title });
-  upsertMeta('meta[name="twitter:description"]', { name: "twitter:description", content: description });
+  upsertMeta('meta[name="twitter:description"]', { name: "twitter:description", content: DEFAULT_TWITTER_DESCRIPTION });
   upsertMeta('meta[name="twitter:image"]', { name: "twitter:image", content: imageUrl });
 }
 
@@ -622,7 +625,7 @@ function InstitutionalLanding() {
         <div className="mx-auto grid w-[min(1180px,100%)] items-center gap-10 lg:grid-cols-[1.02fr_.98fr]">
           <div className="max-w-3xl">
             <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold uppercase text-[#FFB27A]"><Sparkles size={15} /> SaaS para negócios locais de alimentação</span>
-            <h1 className="mt-6 text-[clamp(2.55rem,9vw,5.8rem)] font-semibold leading-[.94] tracking-normal">Seu cardápio do seu jeito.</h1>
+            <h1 className="mt-6 text-[clamp(2.55rem,9vw,5.8rem)] font-semibold leading-[.94] tracking-normal">Seu cardápio do seu jeito</h1>
             <p className="mt-6 max-w-2xl text-base leading-8 text-white/68 md:text-lg">Uma plataforma moderna para lancherias criarem seu próprio cardápio digital, receberem pedidos pelo WhatsApp e atenderem seus clientes com mais velocidade, identidade e controle.</p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <a href={whatsappDemo} target="_blank" rel="noreferrer" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-[#FF6A00] px-5 font-semibold text-white shadow-xl shadow-[#FF6A00]/25"><MessageCircle size={18} /> Solicite uma demonstração</a>
@@ -632,12 +635,12 @@ function InstitutionalLanding() {
           <div className="grid gap-5 md:grid-cols-[.78fr_1fr] lg:items-center">
             <div className="mx-auto w-[min(260px,82vw)] rounded-[2.2rem] border border-white/14 bg-[#111] p-3 shadow-2xl shadow-black/40">
               <div className="overflow-hidden rounded-[1.7rem] bg-[#F5F5F5] text-[#0A0A0A]">
-                <div className="bg-[#FF6A00] p-5 text-white"><p className="text-xs font-semibold uppercase">Cardápio digital</p><h2 className="mt-12 text-2xl font-semibold leading-tight">Burger Prime</h2><p className="text-sm text-white/80">Aberto hoje até 23h</p></div>
+                <div className="bg-[#FF6A00] p-5 text-white"><p className="text-xs font-semibold uppercase">Cardápio digital</p><strong className="mt-12 block text-2xl font-semibold leading-tight">Burger Prime</strong><p className="text-sm text-white/80">Aberto hoje até 23h</p></div>
                 <div className="grid gap-3 p-4">{["Combo artesanal", "Pizza brotinho", "Batata especial"].map((item, index) => <div key={item} className="flex items-center justify-between rounded-2xl bg-white p-3 shadow-sm"><div><strong className="text-sm">{item}</strong><p className="text-xs text-black/45">Pedido via WhatsApp</p></div><span className="rounded-full bg-[#FF6A00]/10 px-3 py-1 text-xs font-bold text-[#FF6A00]">R$ {29 + index * 8}</span></div>)}</div>
               </div>
             </div>
             <div className="rounded-[1.7rem] border border-white/10 bg-white/[.06] p-5 shadow-2xl shadow-black/30">
-              <div className="mb-5 flex items-center justify-between"><div><p className="text-xs font-semibold uppercase text-white/45">Dashboard</p><h3 className="text-2xl font-semibold">Controle em tempo real</h3></div><BarChart3 className="text-[#FF6A00]" /></div>
+              <div className="mb-5 flex items-center justify-between"><div><p className="text-xs font-semibold uppercase text-white/45">Dashboard</p><h2 className="text-2xl font-semibold">Controle seus produtos, clientes e pedidos</h2></div><BarChart3 className="text-[#FF6A00]" /></div>
               <div className="grid gap-3 sm:grid-cols-2"><MetricMini label="Pedidos hoje" value="42" /><MetricMini label="Clientes" value="1.284" /><MetricMini label="Ticket médio" value="R$ 46" /><MetricMini label="WhatsApp" value="Direto" /></div>
               <div className="mt-5 h-24 rounded-2xl bg-[linear-gradient(135deg,rgba(255,106,0,.9),rgba(255,255,255,.16))]" />
             </div>
@@ -647,14 +650,14 @@ function InstitutionalLanding() {
 
       <section className="px-4 py-16">
         <div className="mx-auto grid w-[min(1180px,100%)] gap-6">
-          <div className="max-w-2xl"><h2 className="text-3xl font-semibold md:text-5xl">Tudo que uma lancheria precisa para vender melhor.</h2><p className="mt-4 leading-7 text-white/62">Sem marketplace no meio, sem complexidade desnecessária e com a sua marca na frente.</p></div>
+          <div className="max-w-2xl"><h2 className="text-3xl font-semibold md:text-5xl">Delivery próprio para sua lancheria</h2><p className="mt-4 leading-7 text-white/62">Sem marketplace no meio, sem complexidade desnecessária e com a sua marca na frente.</p></div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{benefits.map((benefit) => <article key={benefit} className="rounded-2xl border border-white/10 bg-white/[.045] p-5"><Check className="mb-4 text-[#FF6A00]" size={20} /><strong className="font-semibold">{benefit}</strong></article>)}</div>
         </div>
       </section>
 
       <section className="px-4 py-16">
         <div className="mx-auto grid w-[min(1180px,100%)] gap-8 rounded-[2rem] border border-white/10 bg-[#1A1A1A] p-6 md:p-10 lg:grid-cols-[.8fr_1.2fr]">
-          <div><span className="text-sm font-semibold uppercase text-[#FF6A00]">Como funciona</span><h2 className="mt-3 text-3xl font-semibold md:text-4xl">Do cadastro ao pedido, em poucos passos.</h2></div>
+          <div><span className="text-sm font-semibold uppercase text-[#FF6A00]">Como funciona</span><h2 className="mt-3 text-3xl font-semibold md:text-4xl">Pedidos direto no WhatsApp</h2></div>
           <div className="grid gap-4">{steps.map((step, index) => <div key={step} className="flex gap-4 rounded-2xl bg-white/[.04] p-4"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#FF6A00] font-semibold">{index + 1}</span><p className="leading-7 text-white/70">{step}</p></div>)}</div>
         </div>
       </section>
@@ -663,7 +666,7 @@ function InstitutionalLanding() {
         <div className="mx-auto grid w-[min(1180px,100%)] items-center gap-10 lg:grid-cols-[1.04fr_.96fr] lg:gap-16">
           <div className="grid gap-5 text-white/68">
             <span className="text-sm font-semibold uppercase tracking-normal text-[#FF6A00]">Sobre nós</span>
-            <h2 className="max-w-2xl text-3xl font-semibold leading-tight text-white md:text-5xl">Startt Delivery, por Startt Facilities.</h2>
+            <h2 className="max-w-2xl text-3xl font-semibold leading-tight text-white md:text-5xl">Sobre a Startt Delivery</h2>
             <div className="grid max-w-2xl gap-4 text-base leading-8">
               <p>O Startt Delivery nasceu dentro do ecossistema Startt Facilities com o objetivo de oferecer uma solução moderna, acessível e completa para lancherias que desejam profissionalizar sua presença digital.</p>
               <p>Idealizado por Paulo Disconzi, em Porto Alegre-RS, o sistema foi desenvolvido para atender negócios que precisam de mais autonomia, organização e identidade própria no atendimento online.</p>
@@ -680,7 +683,7 @@ function InstitutionalLanding() {
       <section id="contatos" className="px-4 py-16">
         <div className="mx-auto grid w-[min(1180px,100%)] gap-8 lg:grid-cols-[.9fr_1.1fr]">
           <div className="rounded-[2rem] border border-white/10 bg-white/[.045] p-6 md:p-8">
-            <h2 className="text-3xl font-semibold">Contatos</h2>
+            <h2 className="text-3xl font-semibold">Fale com a Startt</h2>
             <div className="mt-6 grid gap-4 text-white/70">
               <a className="flex items-center gap-3 hover:text-white" href="mailto:disconziinc@gmail.com"><Mail size={18} /> disconziinc@gmail.com</a>
               <a className="flex items-center gap-3 hover:text-white" href={whatsappDemo} target="_blank" rel="noreferrer"><MessageCircle size={18} /> +5551992885988</a>
@@ -689,7 +692,7 @@ function InstitutionalLanding() {
             <div className="mt-7 flex flex-col gap-3 sm:flex-row"><a href={whatsappDemo} target="_blank" rel="noreferrer" className="rounded-full bg-[#FF6A00] px-5 py-3 text-center font-semibold text-white">Falar com a Startt</a><a href={whatsappDemo} target="_blank" rel="noreferrer" className="rounded-full border border-white/12 px-5 py-3 text-center font-semibold">Solicitar demonstração</a></div>
           </div>
           <form id="lead" onSubmit={submitLead} className="grid gap-4 rounded-[2rem] border border-white/10 bg-[#F5F5F5] p-5 text-[#0A0A0A] shadow-2xl md:p-8">
-            <div><h2 className="text-3xl font-semibold">Solicitar demonstração</h2><p className="mt-2 text-sm leading-6 text-black/58">Conte um pouco sobre sua lancheria. Você pode enviar por e-mail ou WhatsApp.</p></div>
+            <div><h2 className="text-3xl font-semibold">Solicite uma demonstração</h2><p className="mt-2 text-sm leading-6 text-black/58">Conte um pouco sobre sua lancheria. Você pode enviar por e-mail ou WhatsApp.</p></div>
             <div className="grid gap-3 sm:grid-cols-2"><LeadInput placeholder="Nome" value={lead.name} onChange={(value) => updateLead("name", value)} /><LeadInput placeholder="Nome da lancheria" value={lead.business} onChange={(value) => updateLead("business", value)} /><LeadInput placeholder="WhatsApp" value={lead.whatsapp} onChange={(value) => updateLead("whatsapp", value)} /><LeadInput placeholder="E-mail" value={lead.email} onChange={(value) => updateLead("email", value)} /><LeadInput placeholder="Cidade" value={lead.city} onChange={(value) => updateLead("city", value)} /><LeadInput placeholder="Instagram da lancheria" value={lead.instagram} onChange={(value) => updateLead("instagram", value)} /></div>
             <textarea className="min-h-28 rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm outline-[#FF6A00]" placeholder="Mensagem" value={lead.message} onChange={(event) => updateLead("message", event.target.value)} />
             {leadError && <p className="rounded-2xl bg-red-50 p-3 text-sm font-semibold text-startt-red">{leadError}</p>}
