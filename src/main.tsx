@@ -111,6 +111,11 @@ const MASTER_SESSION_KEY = "startt_delivery_master_session";
 const ADMIN_SESSION_PREFIX = "startt_delivery_admin_session_";
 const NEW_ORDER_EVENT = "startt:new-order";
 const SAVE_DELAY = 250;
+const SITE_URL = "https://starttdelivery.com.br";
+const DEFAULT_SEO_TITLE = "Startt Delivery — Seu cardápio do seu jeito";
+const DEFAULT_SEO_DESCRIPTION = "Sistema profissional de cardápio digital para lancherias. Receba pedidos pelo WhatsApp, tenha seu próprio delivery e gerencie tudo em um painel moderno.";
+const DEFAULT_SEO_IMAGE = `${SITE_URL}/startt-logo.png`;
+const DEFAULT_SEO_KEYWORDS = "cardápio digital, delivery whatsapp, sistema para lancheria, delivery próprio, sistema delivery, cardápio online, startt delivery, delivery porto alegre, painel para lancheria, sistema para hamburgueria";
 
 const adminNav: Array<{ id: AdminScreen; label: string; icon: React.ReactNode }> = [
   { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={18} /> },
@@ -181,6 +186,55 @@ function normalizePhone(value: string) {
 function whatsappPhone(value: string) {
   const normalized = normalizePhone(value);
   return normalized.startsWith("55") ? normalized : `55${normalized}`;
+}
+
+function absoluteUrl(path = "/") {
+  return `${SITE_URL}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+function absoluteImageUrl(value?: string) {
+  if (!value) return DEFAULT_SEO_IMAGE;
+  if (value.startsWith("http://") || value.startsWith("https://")) return value;
+  return absoluteUrl(value);
+}
+
+function upsertMeta(selector: string, attrs: Record<string, string>) {
+  let element = document.head.querySelector(selector) as HTMLMetaElement | null;
+  if (!element) {
+    element = document.createElement("meta");
+    document.head.appendChild(element);
+  }
+  Object.entries(attrs).forEach(([key, value]) => element?.setAttribute(key, value));
+}
+
+function upsertCanonical(url: string) {
+  let element = document.head.querySelector('link[rel="canonical"]') as HTMLLinkElement | null;
+  if (!element) {
+    element = document.createElement("link");
+    element.rel = "canonical";
+    document.head.appendChild(element);
+  }
+  element.href = url;
+}
+
+function applySeo({ title, description = DEFAULT_SEO_DESCRIPTION, path = "/", image = DEFAULT_SEO_IMAGE, type = "website" }: { title: string; description?: string; path?: string; image?: string; type?: string }) {
+  const url = absoluteUrl(path);
+  const imageUrl = absoluteImageUrl(image);
+  document.title = title;
+  upsertMeta('meta[name="description"]', { name: "description", content: description });
+  upsertMeta('meta[name="keywords"]', { name: "keywords", content: DEFAULT_SEO_KEYWORDS });
+  upsertMeta('meta[name="robots"]', { name: "robots", content: "index, follow" });
+  upsertCanonical(url);
+  upsertMeta('meta[property="og:title"]', { property: "og:title", content: title });
+  upsertMeta('meta[property="og:description"]', { property: "og:description", content: description });
+  upsertMeta('meta[property="og:image"]', { property: "og:image", content: imageUrl });
+  upsertMeta('meta[property="og:type"]', { property: "og:type", content: type });
+  upsertMeta('meta[property="og:url"]', { property: "og:url", content: url });
+  upsertMeta('meta[property="og:site_name"]', { property: "og:site_name", content: "Startt Delivery" });
+  upsertMeta('meta[name="twitter:card"]', { name: "twitter:card", content: "summary_large_image" });
+  upsertMeta('meta[name="twitter:title"]', { name: "twitter:title", content: title });
+  upsertMeta('meta[name="twitter:description"]', { name: "twitter:description", content: description });
+  upsertMeta('meta[name="twitter:image"]', { name: "twitter:image", content: imageUrl });
 }
 
 function findCustomerByPhone(customers: Customer[], companyId: string, phone: string) {
@@ -391,6 +445,28 @@ function App() {
   const db = useMemo(() => createDatabaseApi(dbState), [dbState]);
   const parts = window.location.pathname.split("/").filter(Boolean);
   const withToast = (node: React.ReactNode) => <><ToastHost />{node}</>;
+  const companyForSeo = parts[0] ? db.getCompanyBySlug(parts[0]) : undefined;
+
+  useEffect(() => {
+    if (!parts[0] || ["sobre", "contatos"].includes(parts[0])) {
+      applySeo({ title: DEFAULT_SEO_TITLE, description: DEFAULT_SEO_DESCRIPTION, path: parts[0] ? `/${parts[0]}` : "/", image: DEFAULT_SEO_IMAGE });
+      return;
+    }
+    if (parts[0] === "master" || parts[1] === "admin" || parts[1] === "checkout") {
+      applySeo({ title: "Startt Delivery — Painel", description: DEFAULT_SEO_DESCRIPTION, path: window.location.pathname, image: DEFAULT_SEO_IMAGE });
+      return;
+    }
+    if (companyForSeo) {
+      applySeo({
+        title: `${companyForSeo.name} — Cardápio online no Startt Delivery`,
+        description: `Acesse o cardápio digital de ${companyForSeo.name}, faça seu pedido pelo WhatsApp e acompanhe as opções disponíveis.`,
+        path: `/${companyForSeo.slug}`,
+        image: companyForSeo.logo_url || companyForSeo.hero_image || DEFAULT_SEO_IMAGE,
+      });
+      return;
+    }
+    applySeo({ title: DEFAULT_SEO_TITLE, description: DEFAULT_SEO_DESCRIPTION, path: window.location.pathname, image: DEFAULT_SEO_IMAGE });
+  }, [window.location.pathname, companyForSeo?.id, companyForSeo?.name, companyForSeo?.slug, companyForSeo?.logo_url, companyForSeo?.hero_image]);
 
   useEffect(() => {
     let alive = true;
@@ -427,7 +503,7 @@ function App() {
     return withToast(<MasterApp db={db} setDbState={setDbState} screen={(parts[1] as MasterScreen) || "dashboard"} login={parts[1] === "login"} />);
   }
 
-  if (!parts[0]) return withToast(<InstitutionalLanding />);
+  if (!parts[0] || parts[0] === "sobre" || parts[0] === "contatos") return withToast(<InstitutionalLanding />);
 
   const company = db.getCompanyBySlug(parts[0]);
   if (!company) return withToast(<NotFound message={`Não encontramos a empresa “/${parts[0]}”. Confira o link e tente novamente.`} />);
