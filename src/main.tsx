@@ -35,6 +35,7 @@ import {
   Trash2,
   UploadCloud,
   UserRound,
+  Utensils,
   UsersRound,
   X,
 } from "lucide-react";
@@ -249,6 +250,31 @@ function buildOrderNoteHtml(company: Company, order: Order, items: OrderItem[]) 
   return `<h1>${htmlEscape(company.name)}</h1><p><strong>Startt Delivery</strong> - Produzido por Startt Facilities</p><p><strong>Pedido:</strong> #${displayOrderNumber(order)}</p><p><strong>Data:</strong> ${date} às ${time}</p><h2>Cliente</h2><p><strong>Nome:</strong> ${htmlEscape(order.customer_name || "Cliente")}</p><p><strong>Telefone:</strong> ${htmlEscape(order.customer_phone || "-")}</p><p><strong>Endereço:</strong> ${htmlEscape(order.customer_address || "Retirada")}</p><h2>Itens vendidos</h2><table><tr><th>Qtd</th><th>Item</th><th>Unitário</th><th>Total</th></tr>${rows || "<tr><td colspan='4'>Itens não informados</td></tr>"}</table><h2>Totais</h2><p>Subtotal: ${money(order.subtotal)}</p><p>Entrega: ${money(order.delivery_fee)}</p>${order.discount ? `<p>Descontos/cupons: ${money(order.discount)}</p>` : ""}<h2>Total final: ${money(order.total)}</h2><h2>Pagamento</h2>${paymentRows}${order.customer_note ? `<h2>Observações</h2><p>${htmlEscape(order.customer_note)}</p>` : ""}<p class="signature">Startt Delivery - produzido por Startt Facilities</p>`;
 }
 
+function buildThermalOrderHtml(company: Company, order: Order, items: OrderItem[]) {
+  const created = new Date(order.created_at);
+  const date = created.toLocaleDateString("pt-BR");
+  const time = created.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const separator = `<div class="sep"></div>`;
+  const itemRows = items.length
+    ? items.map((item) => `<div class="item"><div class="item-title"><span>${item.quantity}x ${htmlEscape(item.name)}</span><span>${money(item.total)}</span></div><div class="muted">Unit. ${money(item.unit_price)}</div></div>`).join("")
+    : `<div class="muted">Itens não informados</div>`;
+  const paymentRows = orderPaymentLines(order).map((line) => `<div>${htmlEscape(line)}</div>`).join("");
+  return `<main class="thermal-receipt">
+    <section class="center"><strong class="store">${htmlEscape(company.name)}</strong><div>${htmlEscape(company.whatsapp || "-")}</div>${company.address ? `<div>${htmlEscape(company.address)}</div>` : ""}<div>Pedido #${displayOrderNumber(order)}</div><div>${date} ${time}</div></section>
+    ${separator}
+    <section><strong>CLIENTE</strong><div>Nome: ${htmlEscape(order.customer_name || "Cliente")}</div><div>Telefone: ${htmlEscape(order.customer_phone || "-")}</div><div>Entrega: ${order.fulfillment === "delivery" ? "Delivery" : "Retirada"}</div><div>Endereço: ${htmlEscape(order.customer_address || "Retirada")}</div></section>
+    ${separator}
+    <section><strong>ITENS</strong>${itemRows}</section>
+    ${separator}
+    <section><div class="line"><span>Subtotal</span><span>${money(order.subtotal)}</span></div><div class="line"><span>Taxa entrega</span><span>${money(order.delivery_fee)}</span></div>${order.discount ? `<div class="line"><span>Desconto/cupom</span><span>${money(order.discount)}</span></div>` : ""}<div class="line total"><span>Total</span><span>${money(order.total)}</span></div></section>
+    ${separator}
+    <section><strong>PAGAMENTO</strong>${paymentRows}</section>
+    ${order.customer_note ? `${separator}<section><strong>OBSERVAÇÕES</strong><div>${htmlEscape(order.customer_note)}</div></section>` : ""}
+    ${separator}
+    <section class="center"><div>Pedido gerado pelo Startt Delivery</div><div>Produto Startt Facilities</div></section>
+  </main>`;
+}
+
 function readImageAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     if (!file.type.startsWith("image/")) {
@@ -271,6 +297,15 @@ function nextOrderNumber(orders: Order[], companyId: string) {
 
 function displayOrderNumber(order: Order) {
   return order.order_number ? String(order.order_number).padStart(5, "0") : order.id;
+}
+
+function resolveOrderForPrint(order: Order, bundle: ReturnType<DatabaseApi["getCompanyBundle"]>) {
+  const customer = bundle.customers.find((item) => item.id === order.customer_id);
+  const items = bundle.order_items.filter((item) => item.order_id === order.id);
+  return {
+    order: { ...order, customer_name: order.customer_name || customer?.name, customer_phone: order.customer_phone || customer?.phone, customer_address: order.customer_address || customer?.address },
+    items,
+  };
 }
 
 function runSave(setSaving: (value: boolean) => void, action: () => void, success: string) {
@@ -317,6 +352,37 @@ function openPrintable(title: string, html: string) {
   `);
   popup.document.close();
   notify("success", "Impressão preparada. Confirme a impressão na janela aberta.");
+}
+
+function openThermalPrintable(title: string, html: string) {
+  const popup = window.open("", "_blank", "width=380,height=760");
+  if (!popup) {
+    notify("error", "O navegador bloqueou a janela de impressão. Use o botão Imprimir nota térmica.");
+    return false;
+  }
+  popup.document.write(`<!doctype html><html><head><title>${htmlEscape(title)}</title><style>
+    @page { size: 80mm auto; margin: 0; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: white; color: #000; }
+    .thermal-receipt { width: 80mm; padding: 4mm; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 12px; line-height: 1.35; color: #000; }
+    .store { display: block; font-size: 15px; text-transform: uppercase; }
+    .center { text-align: center; }
+    .sep { border-top: 1px dashed #000; margin: 8px 0; }
+    .line, .item-title { display: flex; justify-content: space-between; gap: 8px; }
+    .line span:first-child, .item-title span:first-child { min-width: 0; overflow-wrap: anywhere; }
+    .line span:last-child, .item-title span:last-child { white-space: nowrap; }
+    .item { margin: 6px 0; }
+    .muted { font-size: 11px; }
+    .total { margin-top: 6px; font-size: 14px; font-weight: 700; }
+    @media print {
+      body { margin: 0; background: white; }
+      .thermal-receipt { width: 80mm; padding: 4mm; }
+      .no-print { display: none !important; }
+    }
+  </style></head><body>${html}<script>window.onload=function(){try{window.print()}catch(e){}}</script></body></html>`);
+  popup.document.close();
+  notify("success", "Nota térmica preparada. Confirme a impressão na janela aberta.");
+  return true;
 }
 
 function App() {
@@ -919,14 +985,29 @@ function CompanyAdmin({ db, setDbState, company, screen, login }: { db: Database
   const [newOrderFlash, setNewOrderFlash] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const lastOrderCount = useRef(bundle.orders.length);
+  const printedOrderIds = useRef<Set<string>>(new Set());
   const user = bundle.users.find((item) => item.id === sessionUserId);
   const allowed = user ? roleAccess[user.role] : [];
   const activeScreen = allowed.includes(screen) ? screen : allowed[0] || "dashboard";
 
-  function announceNewOrder() {
+  function printThermalOrder(order: Order, auto = false) {
+    try {
+      const resolved = resolveOrderForPrint(order, bundle);
+      const opened = openThermalPrintable(`Pedido #${displayOrderNumber(order)}`, buildThermalOrderHtml(company, resolved.order, resolved.items));
+      if (!opened && auto) notify("info", "Impressão automática bloqueada. Use o botão Imprimir nota térmica.");
+    } catch {
+      notify("error", "Não foi possível preparar a nota térmica. O pedido continua salvo.");
+    }
+  }
+
+  function announceNewOrder(order?: Order) {
     setNewOrderBadge((count) => count + 1);
     setNewOrderFlash(true);
     notify("info", "Novo pedido recebido.");
+    if (order && bundle.print_settings?.auto_print_orders && !printedOrderIds.current.has(order.id)) {
+      printedOrderIds.current.add(order.id);
+      printThermalOrder(order, true);
+    }
     try {
       const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (AudioContextClass) {
@@ -947,14 +1028,20 @@ function CompanyAdmin({ db, setDbState, company, screen, login }: { db: Database
   }
 
   useEffect(() => {
-    if (bundle.orders.length > lastOrderCount.current) announceNewOrder();
+    if (bundle.orders.length > lastOrderCount.current) {
+      const latest = [...bundle.orders].sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+      announceNewOrder(latest);
+    }
     lastOrderCount.current = bundle.orders.length;
   }, [bundle.orders.length]);
 
   useEffect(() => {
     function onNewOrder(event: Event) {
-      const detail = (event as CustomEvent<{ company_id: string }>).detail;
-      if (detail?.company_id === company.id) announceNewOrder();
+      const detail = (event as CustomEvent<{ company_id: string; order_id?: string }>).detail;
+      if (detail?.company_id === company.id) {
+        const order = detail.order_id ? bundle.orders.find((item) => item.id === detail.order_id) : undefined;
+        announceNewOrder(order);
+      }
     }
     window.addEventListener(NEW_ORDER_EVENT, onNewOrder);
     return () => window.removeEventListener(NEW_ORDER_EVENT, onNewOrder);
@@ -1041,13 +1128,13 @@ function CompanyAdmin({ db, setDbState, company, screen, login }: { db: Database
         </aside>
       </div>
       <section className="p-4 md:p-6">
-        <AdminContent screen={activeScreen} db={db} setDbState={setDbState} company={company} user={user} />
+        <AdminContent screen={activeScreen} db={db} setDbState={setDbState} company={company} user={user} printThermalOrder={printThermalOrder} />
       </section>
     </main>
   );
 }
 
-function AdminContent({ screen, db, setDbState, company, user }: { screen: AdminScreen; db: DatabaseApi; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>>; company: Company; user: User }) {
+function AdminContent({ screen, db, setDbState, company, user, printThermalOrder }: { screen: AdminScreen; db: DatabaseApi; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>>; company: Company; user: User; printThermalOrder: (order: Order, auto?: boolean) => void }) {
   const bundle = db.getCompanyBundle(company.id);
   const plan = bundle.plan;
   if (screen === "relatorios" && plan && !plan.allow_reports) return <PlanBlocked />;
@@ -1056,7 +1143,7 @@ function AdminContent({ screen, db, setDbState, company, user }: { screen: Admin
   if (screen === "conta") return <AccountSettings company={company} user={user} setDbState={setDbState} />;
   if (screen === "dashboard") return <Dashboard company={company} bundle={bundle} />;
   if (screen === "caixa") return <Cashier company={company} user={user} products={bundle.products.filter((item) => item.active)} setDbState={setDbState} />;
-  if (screen === "pedidos") return <OrdersManager bundle={bundle} setDbState={setDbState} company={company} user={user} />;
+  if (screen === "pedidos") return <OrdersManager bundle={bundle} setDbState={setDbState} company={company} user={user} printThermalOrder={printThermalOrder} />;
   if (screen === "clientes") return <CustomersManager company={company} customers={bundle.customers} orders={bundle.orders} orderItems={bundle.order_items} setDbState={setDbState} />;
   if (screen === "produtos") return <ProductsManager company={company} products={bundle.products} categories={bundle.categories} plan={plan} setDbState={setDbState} />;
   if (screen === "categorias") return <CategoriesManager company={company} categories={bundle.categories} setDbState={setDbState} />;
@@ -1064,7 +1151,7 @@ function AdminContent({ screen, db, setDbState, company, user }: { screen: Admin
   if (screen === "relatorios") return <Reports company={company} bundle={bundle} />;
   if (screen === "fretes") return <ZonesManager company={company} zones={bundle.delivery_zones} setDbState={setDbState} />;
   if (screen === "impressao") return <PrintManager company={company} settings={bundle.print_settings} setDbState={setDbState} />;
-  if (screen === "configuracoes") return <CompanySettings company={company} voucherBrands={bundle.voucher_brands} setDbState={setDbState} />;
+  if (screen === "configuracoes") return <CompanySettings company={company} voucherBrands={bundle.voucher_brands} printSettings={bundle.print_settings} setDbState={setDbState} />;
   return <UsersManager company={company} users={bundle.users} plan={plan} setDbState={setDbState} />;
 }
 
@@ -1227,7 +1314,7 @@ function Cashier({ company, user, products, setDbState }: { company: Company; us
 
 const orderStatuses: OrderStatus[] = ["novo", "aceito", "preparando", "saiu_para_entrega", "pronto_para_retirada", "concluido", "cancelado"];
 
-function OrdersManager({ bundle, setDbState, company, user }: { bundle: ReturnType<DatabaseApi["getCompanyBundle"]>; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>>; company: Company; user: User }) {
+function OrdersManager({ bundle, setDbState, company, user, printThermalOrder }: { bundle: ReturnType<DatabaseApi["getCompanyBundle"]>; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>>; company: Company; user: User; printThermalOrder: (order: Order) => void }) {
   const [status, setStatus] = useState("todos");
   const [search, setSearch] = useState("");
   const [date, setDate] = useState("");
@@ -1248,15 +1335,14 @@ function OrdersManager({ bundle, setDbState, company, user }: { bundle: ReturnTy
   return (
     <CrudShell title="Pedidos" description="Pedidos recebidos do cardápio online.">
       <div className="grid gap-3 md:grid-cols-3"><Input placeholder="Buscar cliente" value={search} onChange={setSearch} /><Input placeholder="" type="date" value={date} onChange={setDate} /><Select value={status} onChange={setStatus}><option value="todos">Todos</option>{orderStatuses.map((item) => <option key={item}>{item}</option>)}</Select></div>
-      <Table headers={["Pedido", "Cliente", "Pagamento", "Status", "Total", "Ações"]} rows={rows.map((order) => [`#${displayOrderNumber(order)}`, order.customer_name || customerName(order.customer_id, bundle.customers), order.payment_details || order.payment_method, order.status, money(order.total), <div className="flex flex-wrap gap-2" key={order.id}><Select value={order.status} onChange={(value) => update(order, value as OrderStatus)}>{orderStatuses.map((item) => <option key={item}>{item}</option>)}</Select><button className="rounded-lg border px-3 font-bold" onClick={() => printOrder(company, order, bundle)}>Imprimir</button><button className="rounded-lg border px-3 font-bold" onClick={() => sendOrderUpdate(order, company, bundle)}>WhatsApp</button>{["dono", "gerente"].includes(user.role) && <button className="rounded-lg bg-startt-red px-3 py-2 font-bold text-white" onClick={() => remove(order)}>Excluir</button>}</div>])} />
+      <Table headers={["Pedido", "Cliente", "Pagamento", "Status", "Total", "Ações"]} rows={rows.map((order) => [`#${displayOrderNumber(order)}`, order.customer_name || customerName(order.customer_id, bundle.customers), order.payment_details || order.payment_method, order.status, money(order.total), <div className="flex flex-wrap gap-2" key={order.id}><Select value={order.status} onChange={(value) => update(order, value as OrderStatus)}>{orderStatuses.map((item) => <option key={item}>{item}</option>)}</Select><button className="rounded-lg border px-3 py-2 font-bold" onClick={() => printOrder(company, order, bundle)}>Ver pedido</button><button className="rounded-lg bg-startt-green px-3 py-2 font-bold text-white shadow-lg shadow-startt-green/20" onClick={() => printThermalOrder(order)}>Imprimir nota térmica</button><button className="rounded-lg border px-3 py-2 font-bold" onClick={() => sendOrderUpdate(order, company, bundle)}>Enviar WhatsApp</button>{["dono", "gerente"].includes(user.role) && <button className="rounded-lg bg-startt-red px-3 py-2 font-bold text-white" onClick={() => remove(order)}>Excluir</button>}</div>])} />
     </CrudShell>
   );
 }
 
 function printOrder(company: Company, order: Order, bundle: ReturnType<DatabaseApi["getCompanyBundle"]>) {
-  const items = bundle.order_items.filter((item) => item.order_id === order.id);
-  const customer = bundle.customers.find((item) => item.id === order.customer_id);
-  openPrintable("Pedido", buildOrderNoteHtml(company, { ...order, customer_name: order.customer_name || customer?.name, customer_phone: order.customer_phone || customer?.phone, customer_address: order.customer_address || customer?.address }, items));
+  const resolved = resolveOrderForPrint(order, bundle);
+  openPrintable("Pedido", buildOrderNoteHtml(company, resolved.order, resolved.items));
 }
 
 function sendOrderUpdate(order: Order, company: Company, bundle: ReturnType<DatabaseApi["getCompanyBundle"]>) {
@@ -1495,14 +1581,15 @@ function PrintManager({ company, settings, setDbState }: { company: Company; set
   const fallback: PrintSettings = { company_id: company.id, auto_print_orders: false, auto_print_cash_sales: false, printer_name: "", paper_width: "80mm", copies: 1, footer_text: "Startt Delivery — produzido por Startt Facilities" };
   const [form, setForm] = useState(settings || fallback);
   function save() { setDbState((current) => ({ ...current, print_settings: current.print_settings.some((item) => item.company_id === company.id) ? current.print_settings.map((item) => item.company_id === company.id ? form : item) : [...current.print_settings, form] })); }
-  return <CrudShell title="Impressão" description="Modo normal usa window.print(). Futuro modo avançado pode usar QZ Tray."><div className="grid gap-3 rounded-lg border border-black/10 bg-white p-4 md:grid-cols-2"><label className="flex gap-2 font-bold"><input type="checkbox" checked={form.auto_print_orders} onChange={(e) => setForm({ ...form, auto_print_orders: e.target.checked })} /> Imprimir novos pedidos</label><label className="flex gap-2 font-bold"><input type="checkbox" checked={form.auto_print_cash_sales} onChange={(e) => setForm({ ...form, auto_print_cash_sales: e.target.checked })} /> Imprimir vendas do caixa</label><Input placeholder="Nome da impressora" value={form.printer_name} onChange={(value) => setForm({ ...form, printer_name: value })} /><Select value={form.paper_width} onChange={(value) => setForm({ ...form, paper_width: value as "58mm" | "80mm" })}><option>58mm</option><option>80mm</option></Select><Input placeholder="Quantidade de vias" value={String(form.copies)} onChange={(value) => setForm({ ...form, copies: Number(value) || 1 })} /><Input placeholder="Rodapé" value={form.footer_text} onChange={(value) => setForm({ ...form, footer_text: value })} /><button onClick={save} className="rounded-lg bg-startt-green px-4 py-3 font-black text-white">Salvar configuração</button><button onClick={() => openPrintable("Teste de impressão", `<h1>${company.name}</h1><p>Teste ${form.paper_width}</p><p>${form.footer_text}</p>`)} className="rounded-lg border border-black/10 bg-white px-4 py-3 font-black">Testar impressão</button></div></CrudShell>;
+  return <CrudShell title="Impressão" description="Configure a impressão por navegador. O modo automático tenta abrir a janela da nota térmica ao receber novos pedidos."><div className="grid gap-3 rounded-lg border border-black/10 bg-white p-4 md:grid-cols-2"><label className="flex gap-2 font-bold"><input type="checkbox" checked={form.auto_print_orders} onChange={(e) => setForm({ ...form, auto_print_orders: e.target.checked, paper_width: "80mm" })} /> Imprimir pedidos automaticamente</label><label className="flex gap-2 font-bold"><input type="checkbox" checked={form.auto_print_cash_sales} onChange={(e) => setForm({ ...form, auto_print_cash_sales: e.target.checked })} /> Imprimir vendas do caixa</label><Input placeholder="Nome da impressora" value={form.printer_name} onChange={(value) => setForm({ ...form, printer_name: value })} /><Select value={form.paper_width} onChange={(value) => setForm({ ...form, paper_width: value as "58mm" | "80mm" })}><option>58mm</option><option>80mm</option></Select><Input placeholder="Quantidade de vias" value={String(form.copies)} onChange={(value) => setForm({ ...form, copies: Number(value) || 1 })} /><Input placeholder="Rodapé" value={form.footer_text} onChange={(value) => setForm({ ...form, footer_text: value })} /><button onClick={save} className="rounded-lg bg-startt-green px-4 py-3 font-black text-white">Salvar configuração</button><button onClick={() => openThermalPrintable("Teste térmico 80mm", `<main class="thermal-receipt"><section class="center"><strong class="store">${htmlEscape(company.name)}</strong><div>Teste de impressão 80mm</div></section><div class="sep"></div><div class="line"><span>Total</span><span>R$ 0,00</span></div><div class="sep"></div><section class="center"><div>Pedido gerado pelo Startt Delivery</div><div>Produto Startt Facilities</div></section></main>`)} className="rounded-lg border border-black/10 bg-white px-4 py-3 font-black">Testar nota térmica</button></div></CrudShell>;
 }
 
-function CompanySettings({ company, voucherBrands, setDbState }: { company: Company; voucherBrands: VoucherBrand[]; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
+function CompanySettings({ company, voucherBrands, printSettings, setDbState }: { company: Company; voucherBrands: VoucherBrand[]; printSettings?: PrintSettings; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
   const [form, setForm] = useState(company);
   const [saving, setSaving] = useState(false);
   const [voucherForm, setVoucherForm] = useState({ id: "", name: "", fee_percentage: "", active: true });
   const [voucherOpen, setVoucherOpen] = useState(false);
+  const [autoPrintOrders, setAutoPrintOrders] = useState(printSettings?.auto_print_orders || false);
   const defaultHour = company.opening_hours.match(/\d{1,2}:\d{2}[- às]+\d{1,2}:?\d{0,2}/)?.[0]?.replace(" às ", "-") || "18:00-23:00";
   const [hours, setHours] = useState(() => weekDays.map((day) => ({ day, active: company.is_open, time: defaultHour })));
   function openingHoursSummary() {
@@ -1514,6 +1601,12 @@ function CompanySettings({ company, voucherBrands, setDbState }: { company: Comp
     return active.map((item) => `${item.day.slice(0, 3)} ${item.time}`).join(" • ");
   }
   function save() { if (saving) return; const opening_hours = openingHoursSummary(); runSave(setSaving, () => setDbState((current) => ({ ...current, companies: current.companies.map((item) => item.id === company.id ? { ...form, opening_hours, is_open: hours.some((hour) => hour.active), hero_image: form.banner_url || form.hero_image } : item) })), "Configurações salvas com sucesso."); }
+  function saveAutoPrint(value: boolean) {
+    setAutoPrintOrders(value);
+    const fallback: PrintSettings = { company_id: company.id, auto_print_orders: value, auto_print_cash_sales: printSettings?.auto_print_cash_sales || false, printer_name: printSettings?.printer_name || "", paper_width: printSettings?.paper_width || "80mm", copies: printSettings?.copies || 1, footer_text: printSettings?.footer_text || "Startt Delivery — produzido por Startt Facilities" };
+    setDbState((current) => ({ ...current, print_settings: current.print_settings.some((item) => item.company_id === company.id) ? current.print_settings.map((item) => item.company_id === company.id ? { ...item, auto_print_orders: value } : item) : [...current.print_settings, fallback] }));
+    notify("success", value ? "Impressão automática ativada." : "Impressão automática desativada.");
+  }
   function saveVoucher(event: React.FormEvent) {
     event.preventDefault();
     if (!voucherForm.name.trim()) {
@@ -1597,6 +1690,16 @@ function CompanySettings({ company, voucherBrands, setDbState }: { company: Comp
           <label className="flex gap-2 font-bold"><input type="checkbox" checked={form.delivery_enabled} onChange={(e) => setForm({ ...form, delivery_enabled: e.target.checked })} /> Permitir entrega</label>
           <label className="flex gap-2 font-bold"><input type="checkbox" checked={form.pickup_enabled} onChange={(e) => setForm({ ...form, pickup_enabled: e.target.checked })} /> Permitir retirada</label>
         </div>
+        <section className="grid gap-3 rounded-2xl border border-black/10 bg-white p-4">
+          <div>
+            <h3 className="text-lg font-black">Impressão automática de pedidos</h3>
+            <p className="text-sm text-startt-muted">Quando ativado, o painel tenta abrir a nota térmica 80mm automaticamente ao receber novo pedido. Se o navegador bloquear, use o botão manual em Pedidos.</p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <button type="button" onClick={() => saveAutoPrint(true)} className={`min-h-11 rounded-xl px-4 font-black ${autoPrintOrders ? "bg-startt-green text-white shadow-lg shadow-startt-green/20" : "border border-black/10 bg-white"}`}>Ativado</button>
+            <button type="button" onClick={() => saveAutoPrint(false)} className={`min-h-11 rounded-xl px-4 font-black ${!autoPrintOrders ? "bg-startt-ink text-white" : "border border-black/10 bg-white"}`}>Desativado</button>
+          </div>
+        </section>
         <button disabled={saving} onClick={save} className="w-fit rounded-xl bg-startt-green px-4 py-3 font-black text-white shadow-lg shadow-startt-green/20 disabled:opacity-60">{saving ? "Salvando..." : "Salvar configurações"}</button>
       </div>
     </CrudShell>
@@ -1775,16 +1878,40 @@ function MasterUserControls({ db, setDbState }: { db: DatabaseApi; setDbState: R
 }
 
 function ProductCard({ product, category, onOpen, onAdd }: { product: Product; category: string; onOpen: () => void; onAdd: () => void }) {
-  return <article onClick={onOpen} className="sd-card-lift grid min-h-40 cursor-pointer rounded-3xl border border-black/10 bg-white p-5 shadow-sm"><div className="flex h-full flex-col justify-between gap-5"><div><div className="mb-2 flex items-center justify-between gap-3"><span className="text-xs font-black uppercase text-startt-muted">{category}</span>{product.badge && <span className="rounded-full bg-startt-rose px-3 py-1 text-xs font-black text-startt-green">{product.badge}</span>}</div><h3 className="text-xl font-black leading-tight tracking-tight">{product.name}</h3>{product.description && <p className="mt-3 line-clamp-2 text-sm leading-6 text-startt-muted">{product.description}</p>}</div><div className="flex items-center justify-between gap-3"><strong className="font-display text-2xl font-black text-startt-green">{money(product.price)}</strong><button onClick={(event) => { event.stopPropagation(); onAdd(); }} aria-label={`Adicionar ${product.name}`} className="inline-flex min-h-11 items-center gap-2 rounded-2xl bg-startt-green px-4 text-sm font-black text-white shadow-lg shadow-startt-green/20"><Plus size={17} /> Adicionar</button></div></div></article>;
+  const hasImage = Boolean(product.image?.trim());
+  return (
+    <article onClick={onOpen} className="sd-card-lift grid cursor-pointer overflow-hidden rounded-3xl border border-black/10 bg-white p-3 shadow-sm sm:grid-cols-[132px_1fr] sm:p-4">
+      <div className="relative h-36 overflow-hidden rounded-2xl bg-[linear-gradient(135deg,#FF6A00,#1A1A1A)] shadow-sm sm:h-full sm:min-h-40">
+        {hasImage ? (
+          <img className="h-full w-full object-cover" src={product.image} alt={product.name} onError={(event) => { event.currentTarget.style.display = "none"; }} />
+        ) : (
+          <div className="grid h-full w-full place-items-center text-white/92"><Utensils size={34} /><span className="sr-only">Produto sem foto</span></div>
+        )}
+        {product.badge && <span className="absolute left-3 top-3 rounded-full bg-white/92 px-3 py-1 text-xs font-black text-startt-green shadow-sm">{product.badge}</span>}
+      </div>
+      <div className="grid gap-4 p-2 sm:pl-4">
+        <div>
+          <span className="text-xs font-black uppercase text-startt-muted">{category}</span>
+          <h3 className="mt-1 text-xl font-black leading-tight tracking-normal text-startt-ink">{product.name}</h3>
+          {product.description && <p className="mt-2 line-clamp-2 text-sm leading-6 text-startt-muted">{product.description}</p>}
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <strong className="font-display text-2xl font-black text-startt-green">{money(product.price)}</strong>
+          <button onClick={(event) => { event.stopPropagation(); onAdd(); }} aria-label={`Adicionar ${product.name}`} className="inline-flex min-h-11 items-center gap-2 rounded-2xl bg-startt-green px-4 text-sm font-black text-white shadow-lg shadow-startt-green/20"><Plus size={17} /> Adicionar</button>
+        </div>
+      </div>
+    </article>
+  );
 }
 
 function ProductModal({ product, category, onClose, onAdd }: { product: Product; category: string; onClose: () => void; onAdd: () => void }) {
+  const hasImage = Boolean(product.image?.trim());
   return (
     <div className="fixed inset-0 z-[70] grid place-items-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
       <button className="absolute inset-0 cursor-default" onClick={onClose} aria-label="Fechar produto" />
       <section className="relative grid max-h-[92vh] w-[min(720px,100%)] overflow-hidden rounded-lg bg-white shadow-2xl animate-in zoom-in-95 duration-200 md:grid-cols-[280px_1fr]">
         <button onClick={onClose} className="absolute right-3 top-3 z-10 grid h-10 w-10 place-items-center rounded-lg bg-white/95 shadow" aria-label="Fechar"><X size={20} /></button>
-        <img className="h-64 w-full object-cover md:h-full" src={product.image} alt={product.name} onError={(event) => { event.currentTarget.src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=900&q=80"; }} />
+        {hasImage ? <img className="h-64 w-full object-cover md:h-full" src={product.image} alt={product.name} onError={(event) => { event.currentTarget.style.display = "none"; }} /> : <div className="grid h-64 w-full place-items-center bg-[linear-gradient(135deg,#FF6A00,#1A1A1A)] text-white md:h-full"><Utensils size={52} /></div>}
         <div className="grid gap-4 overflow-auto p-5">
           <div>
             <span className="text-xs font-black uppercase text-startt-green">{category}</span>
@@ -1948,4 +2075,5 @@ function groupSum<T extends Record<string, unknown>>(items: T[], key: keyof T) {
 function sumByDay(items: Array<{ date: string; total: number }>) { return items.reduce<Record<string, number>>((acc, item) => { const day = item.date.slice(0, 10); acc[day] = (acc[day] || 0) + item.total; return acc; }, {}); }
 
 createRoot(document.getElementById("root")!).render(<App />);
+
 
