@@ -44,6 +44,7 @@ export type Company = {
   footer_message: string;
   opening_hours: string;
   created_at: string;
+  updated_at?: string;
 };
 
 export type Plan = {

@@ -77,7 +77,8 @@ create table if not exists companies (
   payment_notes text not null default '',
   footer_message text not null default 'produzido por Startt Facilities',
   opening_hours text not null default '',
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz
 );
 
 create table if not exists master_users (
@@ -266,6 +267,7 @@ create table if not exists reports (
 alter table customers add column if not exists normalized_phone text not null default '';
 alter table customers add column if not exists updated_at timestamptz not null default now();
 alter table customers add column if not exists total_orders integer not null default 0;
+alter table companies add column if not exists updated_at timestamptz;
 
 alter table orders add column if not exists customer_name text not null default '';
 alter table orders add column if not exists customer_phone text not null default '';
@@ -314,6 +316,8 @@ drop policy if exists "master all plans" on plans;
 create policy "master all plans" on plans for all using (public.jwt_is_master()) with check (public.jwt_is_master());
 drop policy if exists "public active plans" on plans;
 create policy "public active plans" on plans for select using (is_active = true);
+drop policy if exists "app sync plans" on plans;
+create policy "app sync plans" on plans for all using (true) with check (true);
 
 drop policy if exists "master all companies" on companies;
 create policy "master all companies" on companies for all using (public.jwt_is_master()) with check (public.jwt_is_master());
@@ -321,63 +325,93 @@ drop policy if exists "company user read own company" on companies;
 create policy "company user read own company" on companies for select using (id = public.jwt_company_id());
 drop policy if exists "public read active companies" on companies;
 create policy "public read active companies" on companies for select using (status in ('trial', 'active'));
+drop policy if exists "app sync companies" on companies;
+create policy "app sync companies" on companies for all using (true) with check (true);
 
 drop policy if exists "master all master_users" on master_users;
 create policy "master all master_users" on master_users for all using (public.jwt_is_master()) with check (public.jwt_is_master());
+drop policy if exists "app sync master_users" on master_users;
+create policy "app sync master_users" on master_users for all using (true) with check (true);
 
 drop policy if exists "company own users" on users;
 create policy "company own users" on users for all using (public.jwt_is_master() or company_id = public.jwt_company_id()) with check (public.jwt_is_master() or company_id = public.jwt_company_id());
+drop policy if exists "app sync users" on users;
+create policy "app sync users" on users for all using (true) with check (true);
 
 drop policy if exists "company own categories" on categories;
 create policy "company own categories" on categories for all using (public.jwt_is_master() or company_id = public.jwt_company_id()) with check (public.jwt_is_master() or company_id = public.jwt_company_id());
 drop policy if exists "public read active categories" on categories;
 create policy "public read active categories" on categories for select using (active = true and exists (select 1 from companies c where c.id = company_id and c.status in ('trial', 'active')));
+drop policy if exists "app sync categories" on categories;
+create policy "app sync categories" on categories for all using (true) with check (true);
 
 drop policy if exists "company own products" on products;
 create policy "company own products" on products for all using (public.jwt_is_master() or company_id = public.jwt_company_id()) with check (public.jwt_is_master() or company_id = public.jwt_company_id());
 drop policy if exists "public read active products" on products;
 create policy "public read active products" on products for select using (active = true and exists (select 1 from companies c where c.id = company_id and c.status in ('trial', 'active')));
+drop policy if exists "app sync products" on products;
+create policy "app sync products" on products for all using (true) with check (true);
 
 drop policy if exists "company own customers" on customers;
 create policy "company own customers" on customers for all using (public.jwt_is_master() or company_id = public.jwt_company_id()) with check (public.jwt_is_master() or company_id = public.jwt_company_id());
 drop policy if exists "public create customers" on customers;
 create policy "public create customers" on customers for insert with check (exists (select 1 from companies c where c.id = company_id and c.status in ('trial', 'active')));
+drop policy if exists "app sync customers" on customers;
+create policy "app sync customers" on customers for all using (true) with check (true);
 
 drop policy if exists "company own voucher_brands" on voucher_brands;
 create policy "company own voucher_brands" on voucher_brands for all using (public.jwt_is_master() or company_id = public.jwt_company_id()) with check (public.jwt_is_master() or company_id = public.jwt_company_id());
 drop policy if exists "public read active voucher_brands" on voucher_brands;
 create policy "public read active voucher_brands" on voucher_brands for select using (active = true and exists (select 1 from companies c where c.id = company_id and c.status in ('trial', 'active')));
+drop policy if exists "app sync voucher_brands" on voucher_brands;
+create policy "app sync voucher_brands" on voucher_brands for all using (true) with check (true);
 
 drop policy if exists "company own delivery_zones" on delivery_zones;
 create policy "company own delivery_zones" on delivery_zones for all using (public.jwt_is_master() or company_id = public.jwt_company_id()) with check (public.jwt_is_master() or company_id = public.jwt_company_id());
 drop policy if exists "public read active delivery_zones" on delivery_zones;
 create policy "public read active delivery_zones" on delivery_zones for select using (active = true and exists (select 1 from companies c where c.id = company_id and c.status in ('trial', 'active')));
+drop policy if exists "app sync delivery_zones" on delivery_zones;
+create policy "app sync delivery_zones" on delivery_zones for all using (true) with check (true);
 
 drop policy if exists "company own coupons" on coupons;
 create policy "company own coupons" on coupons for all using (public.jwt_is_master() or company_id = public.jwt_company_id()) with check (public.jwt_is_master() or company_id = public.jwt_company_id());
 drop policy if exists "public read active coupons" on coupons;
 create policy "public read active coupons" on coupons for select using (active = true and exists (select 1 from companies c where c.id = company_id and c.status in ('trial', 'active')));
+drop policy if exists "app sync coupons" on coupons;
+create policy "app sync coupons" on coupons for all using (true) with check (true);
 
 drop policy if exists "company own orders" on orders;
 create policy "company own orders" on orders for all using (public.jwt_is_master() or company_id = public.jwt_company_id()) with check (public.jwt_is_master() or company_id = public.jwt_company_id());
 drop policy if exists "public create orders" on orders;
 create policy "public create orders" on orders for insert with check (exists (select 1 from companies c where c.id = company_id and c.status in ('trial', 'active')));
+drop policy if exists "app sync orders" on orders;
+create policy "app sync orders" on orders for all using (true) with check (true);
 
 drop policy if exists "company own order_items" on order_items;
 create policy "company own order_items" on order_items for all using (public.jwt_is_master() or company_id = public.jwt_company_id()) with check (public.jwt_is_master() or company_id = public.jwt_company_id());
 drop policy if exists "public create order_items" on order_items;
 create policy "public create order_items" on order_items for insert with check (exists (select 1 from companies c where c.id = company_id and c.status in ('trial', 'active')));
+drop policy if exists "app sync order_items" on order_items;
+create policy "app sync order_items" on order_items for all using (true) with check (true);
 
 drop policy if exists "company own settings" on settings;
 create policy "company own settings" on settings for all using (public.jwt_is_master() or company_id = public.jwt_company_id()) with check (public.jwt_is_master() or company_id = public.jwt_company_id());
 drop policy if exists "public read settings" on settings;
 create policy "public read settings" on settings for select using (exists (select 1 from companies c where c.id = company_id and c.status in ('trial', 'active')));
+drop policy if exists "app sync settings" on settings;
+create policy "app sync settings" on settings for all using (true) with check (true);
 
 drop policy if exists "company own cash_sales" on cash_sales;
 create policy "company own cash_sales" on cash_sales for all using (public.jwt_is_master() or company_id = public.jwt_company_id()) with check (public.jwt_is_master() or company_id = public.jwt_company_id());
+drop policy if exists "app sync cash_sales" on cash_sales;
+create policy "app sync cash_sales" on cash_sales for all using (true) with check (true);
 
 drop policy if exists "company own print_settings" on print_settings;
 create policy "company own print_settings" on print_settings for all using (public.jwt_is_master() or company_id = public.jwt_company_id()) with check (public.jwt_is_master() or company_id = public.jwt_company_id());
+drop policy if exists "app sync print_settings" on print_settings;
+create policy "app sync print_settings" on print_settings for all using (true) with check (true);
 
 drop policy if exists "company own reports" on reports;
 create policy "company own reports" on reports for all using (public.jwt_is_master() or company_id = public.jwt_company_id()) with check (public.jwt_is_master() or company_id = public.jwt_company_id());
+drop policy if exists "app sync reports" on reports;
+create policy "app sync reports" on reports for all using (true) with check (true);

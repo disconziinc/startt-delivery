@@ -66,6 +66,7 @@ import {
 } from "./data/mockDatabase";
 import {
   DATABASE_STORAGE_KEY,
+  DATABASE_SYNC_ERROR_EVENT,
   getInitialDatabaseSnapshot,
   loadDatabaseSnapshot,
   persistDatabaseSnapshot,
@@ -286,6 +287,20 @@ function absoluteImageUrl(value?: string) {
   if (!value) return DEFAULT_SEO_IMAGE;
   if (value.startsWith("http://") || value.startsWith("https://")) return value;
   return absoluteUrl(value);
+}
+
+function cacheBustedUrl(value: string, version?: string) {
+  if (!value || value.startsWith("data:") || value.startsWith("blob:")) return value;
+  const separator = value.includes("?") ? "&" : "?";
+  return `${value}${separator}v=${encodeURIComponent(version || "startt")}`;
+}
+
+function companyLogoUrl(company: Company) {
+  return cacheBustedUrl(company.logo_url, company.updated_at || company.created_at || company.id);
+}
+
+function companyHeroUrl(company: Company) {
+  return cacheBustedUrl(company.banner_url || company.hero_image, company.updated_at || company.created_at || company.id);
 }
 
 function upsertMeta(selector: string, attrs: Record<string, string>) {
@@ -542,6 +557,7 @@ function openThermalPrintable(title: string, html: string) {
 function App() {
   const [dbState, setDbState] = useState<MockDatabaseState>(() => getInitialDatabaseSnapshot());
   const [databaseReady, setDatabaseReady] = useState(false);
+  const [databaseError, setDatabaseError] = useState("");
   const db = useMemo(() => createDatabaseApi(dbState), [dbState]);
   const parts = window.location.pathname.split("/").filter(Boolean);
   const withToast = (node: React.ReactNode) => <><ToastHost />{node}</>;
@@ -574,6 +590,10 @@ function App() {
       .then((snapshot) => {
         if (!alive) return;
         setDbState(snapshot);
+        setDatabaseError("");
+      })
+      .catch(() => {
+        if (alive) setDatabaseError("Não foi possível sincronizar com o banco. Dados principais podem estar desatualizados.");
       })
       .finally(() => {
         if (alive) setDatabaseReady(true);
@@ -585,7 +605,9 @@ function App() {
 
   useEffect(() => {
     if (!databaseReady) return;
-    void persistDatabaseSnapshot(dbState);
+    persistDatabaseSnapshot(dbState)
+      .then(() => setDatabaseError(""))
+      .catch(() => setDatabaseError("Falha ao salvar no banco. A alteração não foi confirmada para outros dispositivos."));
   }, [dbState, databaseReady]);
 
   useEffect(() => {
@@ -593,31 +615,55 @@ function App() {
       if (event && event.key !== DATABASE_STORAGE_KEY) return;
       loadDatabaseSnapshot().then(setDbState);
     }
+    function refreshFromBackend() {
+      loadDatabaseSnapshot()
+        .then((snapshot) => {
+          setDbState(snapshot);
+          setDatabaseError("");
+        })
+        .catch(() => setDatabaseError("Não foi possível atualizar os dados do banco."));
+    }
+    function handleVisibility() {
+      if (document.visibilityState === "visible") refreshFromBackend();
+    }
+    function handleSyncError() {
+      setDatabaseError("Falha de sincronização com o banco. Confira Supabase/Vercel antes de confiar nesta alteração.");
+    }
     window.addEventListener("storage", refreshFromStorage);
+    window.addEventListener("focus", refreshFromBackend);
+    window.addEventListener(DATABASE_SYNC_ERROR_EVENT, handleSyncError);
+    document.addEventListener("visibilitychange", handleVisibility);
+    const interval = window.setInterval(refreshFromBackend, 30000);
     return () => {
       window.removeEventListener("storage", refreshFromStorage);
+      window.removeEventListener("focus", refreshFromBackend);
+      window.removeEventListener(DATABASE_SYNC_ERROR_EVENT, handleSyncError);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.clearInterval(interval);
     };
   }, []);
 
+  const shell = (node: React.ReactNode) => withToast(<>{databaseError && <div className="sticky top-0 z-[70] border-b border-amber-300 bg-amber-100 px-4 py-2 text-center text-sm font-black text-amber-900">{databaseError}</div>}{node}</>);
+
   if (parts[0] === "master") {
-    return withToast(<MasterApp db={db} setDbState={setDbState} screen={(parts[1] as MasterScreen) || "dashboard"} login={parts[1] === "login"} />);
+    return shell(<MasterApp db={db} setDbState={setDbState} screen={(parts[1] as MasterScreen) || "dashboard"} login={parts[1] === "login"} />);
   }
 
-  if (!parts[0] || parts[0] === "sobre" || parts[0] === "contatos") return withToast(<InstitutionalLanding />);
+  if (!parts[0] || parts[0] === "sobre" || parts[0] === "contatos") return shell(<InstitutionalLanding />);
 
   const company = db.getCompanyBySlug(parts[0]);
-  if (!company) return withToast(<NotFound message={`Não encontramos a empresa “/${parts[0]}”. Confira o link e tente novamente.`} />);
+  if (!company) return shell(<NotFound message={`Não encontramos a empresa “/${parts[0]}”. Confira o link e tente novamente.`} />);
 
   if (parts[1] === "admin") {
     const screen = (parts[2] === "login" ? "dashboard" : parts[2] || "dashboard") as AdminScreen;
-    return withToast(<CompanyAdmin db={db} setDbState={setDbState} company={company} screen={screen} login={parts[2] === "login"} />);
+    return shell(<CompanyAdmin db={db} setDbState={setDbState} company={company} screen={screen} login={parts[2] === "login"} />);
   }
 
   if (parts[1] === "checkout") {
-    return withToast(<PublicMenu db={db} setDbState={setDbState} company={company} checkoutOnly />);
+    return shell(<PublicMenu db={db} setDbState={setDbState} company={company} checkoutOnly />);
   }
 
-  return withToast(<PublicMenu db={db} setDbState={setDbState} company={company} />);
+  return shell(<PublicMenu db={db} setDbState={setDbState} company={company} />);
 }
 
 function ToastHost() {
@@ -641,7 +687,7 @@ function AppHeader({ company }: { company?: Company }) {
     <header className="sticky top-0 z-30 border-b border-black/10 bg-startt-paper/90 px-4 py-3 backdrop-blur-xl">
       <div className="mx-auto flex w-[min(1280px,100%)] items-center justify-between gap-4">
         <a href="/" className="flex items-center gap-3">
-          {company?.logo_url ? <img className="h-11 w-11 rounded-lg object-cover" src={company.logo_url} alt={company.name} onError={(event) => { event.currentTarget.style.display = "none"; }} /> : <img className="h-11 w-11 rounded-lg object-cover" src="/startt-logo.png" alt="Startt Delivery" />}
+            {company?.logo_url ? <img className="h-11 w-11 rounded-lg object-cover" src={companyLogoUrl(company)} alt={company.name} onError={(event) => { event.currentTarget.style.display = "none"; }} /> : <img className="h-11 w-11 rounded-lg object-cover" src="/startt-logo.png" alt="Startt Delivery" />}
           <span>
             <strong className="block leading-tight">{company?.name || "Startt Delivery"}</strong>
             <small className="block text-startt-muted">Produzido por: Startt Facilities</small>
@@ -988,7 +1034,7 @@ function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: Dat
       <header className="sticky top-0 z-40 bg-[#121212] px-4 py-3 text-white shadow-xl shadow-black/20">
         <div className="mx-auto flex w-[min(1180px,100%)] items-center justify-between gap-3">
           <a href={`/${company.slug}`} className="flex min-w-0 items-center gap-3">
-            {company.logo_url ? <img className="h-10 w-10 rounded-full object-cover" src={company.logo_url} alt={company.name} onError={(event) => { event.currentTarget.style.display = "none"; }} /> : <span className="grid h-10 w-10 place-items-center rounded-full bg-startt-green text-sm font-black">DOG</span>}
+            {company.logo_url ? <img className="h-10 w-10 rounded-full object-cover" src={companyLogoUrl(company)} alt={company.name} onError={(event) => { event.currentTarget.style.display = "none"; }} /> : <span className="grid h-10 w-10 place-items-center rounded-full bg-startt-green text-sm font-black">DOG</span>}
             <strong className="truncate text-sm uppercase tracking-[0.18em]">{company.name}</strong>
           </a>
           <div className="flex items-center gap-2">
@@ -1847,7 +1893,7 @@ function CompanySettings({ company, voucherBrands, settings, printSettings, setD
     if (sameTime && active.length === 6 && active.every((item) => item.day !== "Domingo")) return `Aberto Seg-Sáb, ${active[0].time}`;
     return active.map((item) => `${item.day.slice(0, 3)} ${item.time}`).join(" • ");
   }
-  function save() { if (saving) return; const opening_hours = openingHoursSummary(); runSave(setSaving, () => setDbState((current) => ({ ...current, companies: current.companies.map((item) => item.id === company.id ? { ...form, opening_hours, is_open: hours.some((hour) => hour.active), hero_image: form.banner_url || form.hero_image } : item) })), "Configurações salvas com sucesso."); }
+  function save() { if (saving) return; const opening_hours = openingHoursSummary(); runSave(setSaving, () => setDbState((current) => ({ ...current, companies: current.companies.map((item) => item.id === company.id ? { ...form, opening_hours, is_open: hours.some((hour) => hour.active), hero_image: form.banner_url || form.hero_image, updated_at: new Date().toISOString() } : item) })), "Configurações salvas com sucesso."); }
   function saveAutoPrint(value: boolean) {
     setAutoPrintOrders(value);
     const fallback: PrintSettings = { company_id: company.id, auto_print_orders: value, auto_print_cash_sales: printSettings?.auto_print_cash_sales || false, printer_name: printSettings?.printer_name || "", paper_width: printSettings?.paper_width || "80mm", copies: printSettings?.copies || 1, footer_text: printSettings?.footer_text || "Startt Delivery — produzido por Startt Facilities" };
@@ -2096,7 +2142,7 @@ function MasterCompanies({ db, setDbState }: { db: DatabaseApi; setDbState: Reac
     const created = new Date().toISOString();
     const companyId = form.id || id("cmp");
     const previous = db.companies.find((item) => item.id === form.id);
-    const company: Company = { id: companyId, name: form.name, slug: form.slug, logo_url: previous?.logo_url || "", banner_url: previous?.banner_url || previous?.hero_image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1600&q=80", whatsapp: form.whatsapp, address: form.address, hero_image: previous?.hero_image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1600&q=80", primary_color: form.primary_color, minimum_order: previous?.minimum_order || 25, estimated_delivery_time: previous?.estimated_delivery_time || "35-45 min", is_open: previous?.is_open ?? true, delivery_enabled: previous?.delivery_enabled ?? true, pickup_enabled: previous?.pickup_enabled ?? true, status: form.status, plan: plan?.name || "Start", is_registration_enabled: form.is_registration_enabled, plan_id: form.plan_id, subscription_status: form.subscription_status, monthly_price: parseMoney(form.monthly_price), due_day: Number(form.due_day), next_due_date: form.next_due_date, last_payment_date: previous?.last_payment_date || "", payment_notes: form.payment_notes, footer_message: previous?.footer_message || "produzido por Startt Facilities", opening_hours: previous?.opening_hours || "Aberto hoje", created_at: previous?.created_at || created };
+    const company: Company = { id: companyId, name: form.name, slug: form.slug, logo_url: previous?.logo_url || "", banner_url: previous?.banner_url || previous?.hero_image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1600&q=80", whatsapp: form.whatsapp, address: form.address, hero_image: previous?.hero_image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1600&q=80", primary_color: form.primary_color, minimum_order: previous?.minimum_order || 25, estimated_delivery_time: previous?.estimated_delivery_time || "35-45 min", is_open: previous?.is_open ?? true, delivery_enabled: previous?.delivery_enabled ?? true, pickup_enabled: previous?.pickup_enabled ?? true, status: form.status, plan: plan?.name || "Start", is_registration_enabled: form.is_registration_enabled, plan_id: form.plan_id, subscription_status: form.subscription_status, monthly_price: parseMoney(form.monthly_price), due_day: Number(form.due_day), next_due_date: form.next_due_date, last_payment_date: previous?.last_payment_date || "", payment_notes: form.payment_notes, footer_message: previous?.footer_message || "produzido por Startt Facilities", opening_hours: previous?.opening_hours || "Aberto hoje", created_at: previous?.created_at || created, updated_at: created };
     setDbState((current) => ({ ...current, companies: form.id ? current.companies.map((item) => item.id === form.id ? company : item) : [company, ...current.companies], settings: form.id ? current.settings : [{ id: id("set"), company_id: companyId, critical_locked: false, pix_enabled: false, pix_key: "" }, ...current.settings], print_settings: form.id ? current.print_settings : [{ company_id: companyId, auto_print_orders: false, auto_print_cash_sales: false, printer_name: "", paper_width: "80mm", copies: 1, footer_text: "Startt Delivery — produzido por Startt Facilities" }, ...current.print_settings], users: !form.id && form.admin_email ? [{ id: id("usr"), company_id: companyId, name: "Admin inicial", email: form.admin_email, password: form.admin_password, role: "dono", is_active: true, created_at: created }, ...current.users] : current.users }));
     setFormOpen(false);
     notify("success", form.id ? "Empresa atualizada com sucesso." : "Empresa criada com sucesso.");
@@ -2233,7 +2279,7 @@ function CompanyInfoModal({ company, onClose }: { company: Company; onClose: () 
       <button className="absolute inset-0 cursor-default" onClick={onClose} aria-label="Fechar informações" />
       <section className="relative grid max-h-[92vh] w-[min(520px,100%)] gap-4 overflow-auto rounded-lg bg-white p-6 text-center shadow-2xl animate-in">
         <button onClick={onClose} className="absolute right-3 top-3 grid h-10 w-10 place-items-center rounded-lg bg-startt-soft" aria-label="Fechar"><X size={20} /></button>
-        {company.logo_url ? <img className="mx-auto h-20 w-20 rounded-lg object-cover" src={company.logo_url} alt={company.name} /> : <span className="mx-auto grid h-20 w-20 place-items-center rounded-lg bg-startt-green text-4xl font-black text-white">S</span>}
+        {company.logo_url ? <img className="mx-auto h-20 w-20 rounded-lg object-cover" src={companyLogoUrl(company)} alt={company.name} /> : <span className="mx-auto grid h-20 w-20 place-items-center rounded-lg bg-startt-green text-4xl font-black text-white">S</span>}
         <div>
           <h2 className="text-3xl font-black">{company.name}</h2>
           <p className="mt-1 text-sm font-bold text-startt-muted">Produzido por: Startt Facilities</p>
@@ -2354,7 +2400,7 @@ function ImageUpload({ label, value, onChange }: { label: string; value: string;
 }
 function Totals({ subtotal, discount, deliveryFee, total }: { subtotal: number; discount: number; deliveryFee: number; total: number }) { return <div className="grid gap-1 text-sm"><span className="flex justify-between">Subtotal <b>{money(subtotal)}</b></span><span className="flex justify-between">Desconto <b>-{money(discount)}</b></span><span className="flex justify-between">Entrega <b>{money(deliveryFee)}</b></span><strong className="flex justify-between text-base">Total <b>{money(total)}</b></strong></div>; }
 function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) { return <article className="group grid min-h-40 content-between rounded-3xl border border-black/10 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-card-hover"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-startt-rose text-startt-green transition group-hover:scale-105">{icon}</span><div><small className="font-bold uppercase text-startt-muted">{label}</small><strong className="mt-2 block text-3xl font-black tracking-tight">{value}</strong></div></article>; }
-function AdminHero({ company, title, description }: { company?: Company; title: string; description: string }) { return <div className="relative isolate flex min-h-72 items-end overflow-hidden rounded-3xl p-6 text-white shadow-card"><img className="absolute inset-0 -z-20 h-full w-full object-cover" src={company?.hero_image || "https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?auto=format&fit=crop&w=1400&q=80"} alt="" /><div className="absolute inset-0 -z-10 bg-[linear-gradient(120deg,rgba(20,17,15,.92),rgba(20,17,15,.58),rgba(242,106,27,.22))]" /><div className="absolute right-6 top-6 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-black backdrop-blur">{company?.slug || "master"}</div><div><span className="inline-flex items-center gap-2 rounded-full bg-white/12 px-3 py-1 text-sm font-black uppercase text-startt-yellow backdrop-blur"><Building2 size={16} /> Startt Facilities</span><h1 className="mt-3 text-4xl font-black tracking-tight md:text-6xl">{title}</h1><p className="mt-3 max-w-2xl text-white/86">{description}</p></div></div>; }
+function AdminHero({ company, title, description }: { company?: Company; title: string; description: string }) { return <div className="relative isolate flex min-h-72 items-end overflow-hidden rounded-3xl p-6 text-white shadow-card"><img className="absolute inset-0 -z-20 h-full w-full object-cover" src={company ? companyHeroUrl(company) : "https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?auto=format&fit=crop&w=1400&q=80"} alt="" /><div className="absolute inset-0 -z-10 bg-[linear-gradient(120deg,rgba(20,17,15,.92),rgba(20,17,15,.58),rgba(242,106,27,.22))]" /><div className="absolute right-6 top-6 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-black backdrop-blur">{company?.slug || "master"}</div><div><span className="inline-flex items-center gap-2 rounded-full bg-white/12 px-3 py-1 text-sm font-black uppercase text-startt-yellow backdrop-blur"><Building2 size={16} /> Startt Facilities</span><h1 className="mt-3 text-4xl font-black tracking-tight md:text-6xl">{title}</h1><p className="mt-3 max-w-2xl text-white/86">{description}</p></div></div>; }
 function LogoTitle({ title, subtitle }: { title: string; subtitle: string }) { return <div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-startt-ink text-2xl font-black text-white shadow-card"><span className="accent-text">S</span></span><span><strong className="block leading-tight tracking-tight">{title}</strong><small className="block text-startt-muted">{subtitle}</small></span></div>; }
 function StatusCard({ company }: { company: Company }) { return <div className="premium-surface flex gap-3 rounded-2xl p-4"><span className={`mt-1 h-3 w-3 rounded-full ${company.is_open ? "bg-startt-green status-open" : "bg-startt-red"}`} /><div><strong className="block">{company.is_open ? "Loja aberta" : "Loja fechada"}</strong><span className="text-sm leading-6 text-startt-muted">{company.address}</span></div></div>; }
 function FilterButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) { return <button onClick={onClick} className={`flex min-h-11 min-w-fit items-center justify-between gap-3 rounded-2xl px-4 text-sm font-extrabold transition ${active ? "bg-startt-ink text-white shadow-card" : "bg-white text-startt-ink shadow-sm hover:bg-startt-rose"}`}>{children}<ChevronRight size={16} /></button>; }

@@ -16,6 +16,7 @@ import {
 } from "../data/mockDatabase";
 
 export const DATABASE_STORAGE_KEY = "startt_delivery_saas_database_v2";
+export const DATABASE_SYNC_ERROR_EVENT = "startt:database-sync-error";
 
 const tableNames = [
   "companies",
@@ -80,6 +81,7 @@ function withDefaults(parsed: Partial<MockDatabaseState> = {}): MockDatabaseStat
       last_payment_date: company.last_payment_date || "",
       payment_notes: fixMojibake(company.payment_notes || ""),
       address: fixMojibake(company.address || ""),
+      updated_at: company.updated_at || company.created_at || new Date().toISOString(),
     };
   });
 
@@ -212,6 +214,7 @@ async function syncTable(table: TableName, rows: unknown[], key: "id" | "company
 }
 
 export function getInitialDatabaseSnapshot(): MockDatabaseState {
+  if (isSupabaseConfigured) return initialMockDatabase;
   return readFallbackSnapshot();
 }
 
@@ -274,8 +277,9 @@ export async function loadDatabaseSnapshot(): Promise<MockDatabaseState> {
       reports,
     });
   } catch (error) {
-    console.warn("Falha ao carregar Supabase. Usando fallback local.", error);
-    return readFallbackSnapshot();
+    console.error("Falha ao carregar Supabase.", error);
+    window.dispatchEvent(new CustomEvent(DATABASE_SYNC_ERROR_EVENT, { detail: error }));
+    throw error;
   }
 }
 
@@ -291,8 +295,9 @@ export async function persistDatabaseSnapshot(state: MockDatabaseState) {
       await syncTable(table, rows, table === "print_settings" ? "company_id" : "id");
     }
   } catch (error) {
-    console.warn("Falha ao sincronizar Supabase. Salvando fallback local.", error);
-    writeFallbackSnapshot(state);
+    console.error("Falha ao sincronizar Supabase.", error);
+    window.dispatchEvent(new CustomEvent(DATABASE_SYNC_ERROR_EVENT, { detail: error }));
+    throw error;
   }
 }
 
