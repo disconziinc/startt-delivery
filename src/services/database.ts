@@ -316,6 +316,119 @@ export async function loadDatabaseSnapshot(): Promise<MockDatabaseState> {
   }
 }
 
+export async function loadCompanyRouteSnapshot(slug: string, includeAdminData = false): Promise<MockDatabaseState> {
+  if (!isSupabaseConfigured) {
+    if (allowLocalDatabaseFallback) return readFallbackSnapshot();
+    throw new Error("Supabase nao configurado. Configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no ambiente de producao.");
+  }
+
+  try {
+    const client = requireSupabase();
+    const { data: routeBundle, error: routeBundleError } = await client.rpc("startt_company_route_bundle", {
+      p_slug: slug,
+      p_include_admin: includeAdminData,
+    });
+    if (!routeBundleError && routeBundle && typeof routeBundle === "object") {
+      const bundle = routeBundle as Partial<MockDatabaseState> & { company?: Company | null };
+      return withDefaults({
+        companies: bundle.company ? [bundle.company] : [],
+        plans: bundle.plans || [],
+        master_users: [],
+        users: bundle.users || [],
+        categories: bundle.categories || [],
+        products: bundle.products || [],
+        orders: bundle.orders || [],
+        order_items: bundle.order_items || [],
+        customers: bundle.customers || [],
+        voucher_brands: bundle.voucher_brands || [],
+        delivery_zones: bundle.delivery_zones || [],
+        coupons: bundle.coupons || [],
+        settings: bundle.settings || [],
+        cash_sales: bundle.cash_sales || [],
+        print_settings: bundle.print_settings || [],
+        reports: bundle.reports || [],
+      });
+    }
+
+    const [{ data: company, error: companyError }, plans] = await Promise.all([
+      client.from("companies").select("*").eq("slug", slug).maybeSingle(),
+      selectAll<MockDatabaseState["plans"][number]>("plans"),
+    ]);
+    if (companyError) throw companyError;
+
+    if (!company) {
+      return withDefaults({
+        companies: [],
+        plans,
+        master_users: [],
+        users: [],
+        categories: [],
+        products: [],
+        orders: [],
+        order_items: [],
+        customers: [],
+        voucher_brands: [],
+        delivery_zones: [],
+        coupons: [],
+        settings: [],
+        cash_sales: [],
+        print_settings: [],
+        reports: [],
+      });
+    }
+
+    const companyId = (company as Company).id;
+    const [categories, products, orders, customers, voucher_brands, delivery_zones, coupons, settings, print_settings] = await Promise.all([
+      client.from("categories").select("*").eq("company_id", companyId).order("sort_order"),
+      client.from("products").select("*").eq("company_id", companyId),
+      client.from("orders").select("*").eq("company_id", companyId).order("created_at", { ascending: false }),
+      client.from("customers").select("*").eq("company_id", companyId),
+      client.from("voucher_brands").select("*").eq("company_id", companyId),
+      client.from("delivery_zones").select("*").eq("company_id", companyId),
+      client.from("coupons").select("*").eq("company_id", companyId),
+      client.from("settings").select("*").eq("company_id", companyId),
+      client.from("print_settings").select("*").eq("company_id", companyId),
+    ]);
+
+    const adminResponses = includeAdminData
+      ? await Promise.all([
+          client.from("users").select("*").eq("company_id", companyId),
+          client.from("order_items").select("*").eq("company_id", companyId),
+          client.from("cash_sales").select("*").eq("company_id", companyId),
+          client.from("reports").select("*").eq("company_id", companyId),
+        ])
+      : [];
+    const [users, order_items, cash_sales, reports] = adminResponses;
+
+    const responses = [categories, products, orders, customers, voucher_brands, delivery_zones, coupons, settings, print_settings, ...adminResponses];
+    const failed = responses.find((response) => response.error);
+    if (failed?.error) throw failed.error;
+
+    return withDefaults({
+      companies: [company as Company],
+      plans,
+      master_users: [],
+      users: (users?.data || []) as MockDatabaseState["users"],
+      categories: (categories.data || []) as MockDatabaseState["categories"],
+      products: (products.data || []) as MockDatabaseState["products"],
+      orders: (orders.data || []) as MockDatabaseState["orders"],
+      order_items: (order_items?.data || []) as MockDatabaseState["order_items"],
+      customers: (customers.data || []) as MockDatabaseState["customers"],
+      voucher_brands: (voucher_brands.data || []) as MockDatabaseState["voucher_brands"],
+      delivery_zones: (delivery_zones.data || []) as MockDatabaseState["delivery_zones"],
+      coupons: (coupons.data || []) as MockDatabaseState["coupons"],
+      settings: (settings.data || []) as MockDatabaseState["settings"],
+      cash_sales: (cash_sales?.data || []) as MockDatabaseState["cash_sales"],
+      print_settings: (print_settings.data || []) as MockDatabaseState["print_settings"],
+      reports: (reports?.data || []) as MockDatabaseState["reports"],
+    });
+  } catch (error) {
+    console.error("Falha ao carregar lancheria no Supabase.", error);
+    window.dispatchEvent(new CustomEvent(DATABASE_SYNC_ERROR_EVENT, { detail: error }));
+    throw error;
+  }
+}
+
 export async function persistDatabaseSnapshot(state: MockDatabaseState) {
   if (!isSupabaseConfigured) {
     if (allowLocalDatabaseFallback) {

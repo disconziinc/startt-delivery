@@ -68,6 +68,7 @@ import {
   DATABASE_STORAGE_KEY,
   DATABASE_SYNC_ERROR_EVENT,
   getInitialDatabaseSnapshot,
+  loadCompanyRouteSnapshot,
   loadDatabaseSnapshot,
   persistDatabaseSnapshot,
   uploadPublicImage,
@@ -565,12 +566,14 @@ function App() {
   const refreshInFlightRef = useRef(false);
   const db = useMemo(() => createDatabaseApi(dbState), [dbState]);
   const parts = window.location.pathname.split("/").filter(Boolean);
+  const companyRouteSlug = parts[0] && !["master", "sobre", "contatos"].includes(parts[0]) ? parts[0] : "";
+  const companyRouteNeedsAdminData = Boolean(companyRouteSlug && parts[1] === "admin");
   const withToast = (node: React.ReactNode) => <><ToastHost />{node}</>;
   const companyForSeo = parts[0] ? db.getCompanyBySlug(parts[0]) : undefined;
   const setPersistentDbState = useCallback((action: React.SetStateAction<MockDatabaseState>) => {
     pendingSaveRef.current = true;
     setDbState(action);
-  }, []);
+  }, [companyRouteSlug, companyRouteNeedsAdminData]);
 
   useEffect(() => {
     if (!parts[0] || ["sobre", "contatos"].includes(parts[0])) {
@@ -595,11 +598,19 @@ function App() {
 
   useEffect(() => {
     let alive = true;
-    loadDatabaseSnapshot()
+    const primaryLoad = companyRouteSlug ? loadCompanyRouteSnapshot(companyRouteSlug, companyRouteNeedsAdminData) : loadDatabaseSnapshot();
+    primaryLoad
       .then((snapshot) => {
         if (!alive) return;
         setDbState(snapshot);
         setDatabaseError("");
+        if (companyRouteSlug) {
+          loadDatabaseSnapshot()
+            .then((fullSnapshot) => {
+              if (alive && !pendingSaveRef.current && !savingRef.current) setDbState(fullSnapshot);
+            })
+            .catch(() => undefined);
+        }
       })
       .catch(() => {
         if (alive) setDatabaseError("Não foi possível sincronizar com o banco. Dados principais podem estar desatualizados.");
@@ -630,12 +641,12 @@ function App() {
     function refreshFromStorage(event?: StorageEvent) {
       if (event && event.key !== DATABASE_STORAGE_KEY) return;
       if (savingRef.current || pendingSaveRef.current) return;
-      loadDatabaseSnapshot().then(setDbState);
+      (companyRouteSlug ? loadCompanyRouteSnapshot(companyRouteSlug, companyRouteNeedsAdminData) : loadDatabaseSnapshot()).then(setDbState);
     }
     function refreshFromBackend() {
       if (savingRef.current || pendingSaveRef.current || refreshInFlightRef.current) return;
       refreshInFlightRef.current = true;
-      loadDatabaseSnapshot()
+      (companyRouteSlug ? loadCompanyRouteSnapshot(companyRouteSlug, companyRouteNeedsAdminData) : loadDatabaseSnapshot())
         .then((snapshot) => {
           setDbState(snapshot);
           setDatabaseError("");
@@ -663,7 +674,7 @@ function App() {
       document.removeEventListener("visibilitychange", handleVisibility);
       window.clearInterval(interval);
     };
-  }, []);
+  }, [companyRouteSlug, companyRouteNeedsAdminData]);
 
   const shell = (node: React.ReactNode) => withToast(<>{databaseError && <div className="sticky top-0 z-[70] border-b border-amber-300 bg-amber-100 px-4 py-2 text-center text-sm font-black text-amber-900">{databaseError}</div>}{node}</>);
 
