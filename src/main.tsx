@@ -186,7 +186,7 @@ function parseMoney(value: string | number) {
 }
 
 function normalizeText(value: string) {
-  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").toLowerCase().trim();
 }
 
 function pixText(value: string, max: number) {
@@ -218,6 +218,9 @@ function validCnpj(value: string) {
 function normalizePixKey(value: string) {
   const raw = value.trim();
   const digits = raw.replace(/\D/g, "");
+  const onlyPhoneChars = /^[\d\s().+-]+$/.test(raw);
+  const phoneDigits = digits.startsWith("55") && (digits.length === 12 || digits.length === 13) ? digits.slice(2) : digits;
+  if (onlyPhoneChars && digits.length > 0 && phoneDigits.length < 10) return { valid: false, key: raw, type: "telefone incompleto" };
   if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) return { valid: true, key: raw.toLowerCase(), type: "e-mail" };
   if (raw.startsWith("+") && /^\+\d{12,13}$/.test(raw)) return { valid: true, key: raw, type: "telefone" };
   if (validCpf(digits)) return { valid: true, key: digits, type: "CPF" };
@@ -1067,6 +1070,7 @@ function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: Dat
 function CartDrawer({ cartOpen, setCartOpen, cart, setCart, company, zones, zoneId, setZoneId, checkout, setCheckout, fulfillment, setFulfillment, voucherBrands, subtotal, discount, deliveryFee, total, pixEnabled, pixPayload, pixQrCode, pixTxid, finishOrder }: { cartOpen: boolean; setCartOpen: (value: boolean) => void; cart: CartItem[]; setCart: React.Dispatch<React.SetStateAction<CartItem[]>>; company: Company; zones: DeliveryZone[]; zoneId: string; setZoneId: (value: string) => void; checkout: CheckoutState; setCheckout: (value: CheckoutState) => void; fulfillment: Fulfillment; setFulfillment: (value: Fulfillment) => void; voucherBrands: VoucherBrand[]; subtotal: number; discount: number; deliveryFee: number; total: number; pixEnabled: boolean; pixPayload: string; pixQrCode: string; pixTxid: string; finishOrder: () => void | Promise<void> }) {
   const [cepLoading, setCepLoading] = useState(false);
   const [cepMessage, setCepMessage] = useState("");
+  const [pixCopied, setPixCopied] = useState(false);
   const selectedZone = zones.find((zone) => zone.id === zoneId);
   const cashChangeFor = parseMoney(checkout.cash_change_for) || 0;
   const calculatedChange = checkout.payment_method === "Dinheiro" && cashChangeFor > 0 ? Math.max(0, cashChangeFor - total) : 0;
@@ -1074,6 +1078,8 @@ function CartDrawer({ cartOpen, setCartOpen, cart, setCart, company, zones, zone
     if (!pixPayload) return;
     try {
       await navigator.clipboard.writeText(pixPayload);
+      setPixCopied(true);
+      window.setTimeout(() => setPixCopied(false), 1800);
       notify("success", "Código PIX copiado.");
     } catch {
       notify("error", "Não foi possível copiar automaticamente. Selecione o código PIX manualmente.");
@@ -1100,7 +1106,7 @@ function CartDrawer({ cartOpen, setCartOpen, cart, setCart, company, zones, zone
       const matchedZone = zones.find((zone) => normalizeText(zone.neighborhood) === normalizeText(String(data.bairro || "")));
       if (matchedZone) {
         setZoneId(matchedZone.id);
-        setCepMessage(`Frete para ${matchedZone.neighborhood}: ${money(matchedZone.fee)}`);
+        setCepMessage(`Frete para ${matchedZone.neighborhood}: ${money(matchedZone.fee)} • Prazo ${matchedZone.estimated_minutes || "A combinar"}`);
       } else {
         setZoneId("");
         setCepMessage("Seu bairro ainda não possui frete cadastrado. Você pode selecionar manualmente.");
@@ -1181,11 +1187,11 @@ function CartDrawer({ cartOpen, setCartOpen, cart, setCart, company, zones, zone
                   </div>
                   <div className="grid gap-3 sm:grid-cols-[180px_1fr] sm:items-center">
                     <div className="grid place-items-center rounded-2xl bg-white p-3 shadow-sm">
-                      {pixQrCode ? <img className="h-40 w-40 rounded-xl object-contain" src={pixQrCode} alt="QR Code PIX do pedido" /> : <div className="grid h-40 w-40 place-items-center rounded-xl bg-startt-paper text-center text-xs font-bold text-startt-muted">Gerando QR Code PIX...</div>}
+                      {pixQrCode ? <img className="h-52 w-52 rounded-xl object-contain" src={pixQrCode} alt="QR Code PIX do pedido" /> : <div className="grid h-52 w-52 place-items-center rounded-xl bg-startt-paper text-center text-xs font-bold text-startt-muted">Gerando QR Code PIX...</div>}
                     </div>
                     <div className="grid gap-2">
                       <textarea readOnly className="min-h-28 rounded-xl border border-black/10 bg-white px-3 py-2 font-mono text-xs leading-5 text-startt-ink outline-none" value={pixPayload} />
-                      <button type="button" onClick={copyPixCode} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-startt-green px-4 text-sm font-black text-white shadow-lg shadow-startt-green/20"><ClipboardList size={16} /> Copiar código PIX</button>
+                      <button type="button" onClick={copyPixCode} className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-black text-white shadow-lg transition ${pixCopied ? "bg-emerald-600 shadow-emerald-600/20" : "bg-startt-green shadow-startt-green/20"}`}><ClipboardList size={16} /> {pixCopied ? "PIX copiado" : "Copiar PIX"}</button>
                     </div>
                   </div>
                 </div>
@@ -1852,6 +1858,10 @@ function CompanySettings({ company, voucherBrands, settings, printSettings, setD
     event.preventDefault();
     const normalizedPix = normalizePixKey(pixForm.key);
     if (pixForm.enabled && !normalizedPix.valid) {
+      if (normalizedPix.type === "telefone incompleto") {
+        notify("error", "Telefone PIX incompleto. Informe DDD + número, por exemplo: 5198200997.");
+        return;
+      }
       notify("error", "Informe uma chave PIX válida: CPF, CNPJ, e-mail, telefone brasileiro ou chave aleatória.");
       return;
     }
@@ -1931,7 +1941,7 @@ function CompanySettings({ company, voucherBrands, settings, printSettings, setD
             </div>
           </div>
           <div className="grid gap-2 md:max-w-xl">
-            <Input placeholder="Chave PIX" value={pixForm.key} onChange={(key) => setPixForm({ ...pixForm, key })} />
+            <Input placeholder="CPF, CNPJ, e-mail, telefone com DDD ou chave aleatória" value={pixForm.key} onChange={(key) => setPixForm({ ...pixForm, key })} />
             <span className="text-xs font-bold text-startt-muted">Aceita CPF, CNPJ, e-mail, telefone brasileiro ou chave aleatória. Telefones são convertidos automaticamente para +55 no QR Code.</span>
           </div>
           <button className="w-fit rounded-xl bg-startt-green px-4 py-3 font-black text-white shadow-lg shadow-startt-green/20">Salvar PIX</button>

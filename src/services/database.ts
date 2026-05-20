@@ -48,6 +48,19 @@ const defaultMasterUser = {
 type TableName = (typeof tableNames)[number];
 type SnapshotKey = keyof MockDatabaseState;
 
+function fixMojibake(value = "") {
+  if (!/[ÃÂ]/.test(value)) return value;
+  try {
+    return decodeURIComponent(value.split("").map((char) => `%${char.charCodeAt(0).toString(16).padStart(2, "0")}`).join(""));
+  } catch {
+    return value;
+  }
+}
+
+function normalizedNeighborhood(value: string) {
+  return fixMojibake(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").toLowerCase().trim();
+}
+
 function withDefaults(parsed: Partial<MockDatabaseState> = {}): MockDatabaseState {
   const plans = parsed.plans?.length ? parsed.plans : initialMockDatabase.plans;
   const companies = (parsed.companies || initialMockDatabase.companies).map((company) => {
@@ -65,7 +78,8 @@ function withDefaults(parsed: Partial<MockDatabaseState> = {}): MockDatabaseStat
       due_day: company.due_day ?? 10,
       next_due_date: company.next_due_date || "2026-05-10",
       last_payment_date: company.last_payment_date || "",
-      payment_notes: company.payment_notes || "",
+      payment_notes: fixMojibake(company.payment_notes || ""),
+      address: fixMojibake(company.address || ""),
     };
   });
 
@@ -84,9 +98,10 @@ function withDefaults(parsed: Partial<MockDatabaseState> = {}): MockDatabaseStat
       is_active: user.is_active ?? true,
     };
   });
+  const parsedDeliveryZones = (parsed.delivery_zones || []).map((zone) => ({ ...zone, neighborhood: fixMojibake(zone.neighborhood) }));
   const delivery_zones = [
-    ...(parsed.delivery_zones || []),
-    ...initialMockDatabase.delivery_zones.filter((seedZone) => !(parsed.delivery_zones || []).some((zone) => zone.company_id === seedZone.company_id && zone.neighborhood.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() === seedZone.neighborhood.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase())),
+    ...parsedDeliveryZones,
+    ...initialMockDatabase.delivery_zones.filter((seedZone) => !parsedDeliveryZones.some((zone) => zone.company_id === seedZone.company_id && normalizedNeighborhood(zone.neighborhood) === normalizedNeighborhood(seedZone.neighborhood))),
   ];
   const customers = (parsed.customers || initialMockDatabase.customers).map((customer) => {
     const digits = customer.phone.replace(/\D/g, "");
@@ -94,6 +109,7 @@ function withDefaults(parsed: Partial<MockDatabaseState> = {}): MockDatabaseStat
     return {
       ...customer,
       normalized_phone,
+      address: fixMojibake(customer.address || ""),
       updated_at: customer.updated_at || customer.created_at || customer.last_order_at || new Date().toISOString(),
       total_orders: customer.total_orders ?? Math.max(0, (parsed.orders || initialMockDatabase.orders).filter((order) => order.customer_id === customer.id).length),
       total_spent: customer.total_spent ?? 0,
@@ -105,7 +121,7 @@ function withDefaults(parsed: Partial<MockDatabaseState> = {}): MockDatabaseStat
     customer_name: order.customer_name || customers.find((customer) => customer.id === order.customer_id)?.name || "",
     customer_phone: order.customer_phone || customers.find((customer) => customer.id === order.customer_id)?.phone || "",
     normalized_phone: order.normalized_phone || customers.find((customer) => customer.id === order.customer_id)?.normalized_phone || "",
-    customer_address: order.customer_address || customers.find((customer) => customer.id === order.customer_id)?.address || "",
+    customer_address: fixMojibake(order.customer_address || customers.find((customer) => customer.id === order.customer_id)?.address || ""),
     order_number: order.order_number || 10000 + index + 1,
     cash_change_for: order.cash_change_for || 0,
     calculated_change: order.calculated_change || 0,

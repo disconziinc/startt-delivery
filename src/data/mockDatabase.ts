@@ -278,15 +278,25 @@ const demoDeliveryZones: DeliveryZone[] = [
 ];
 
 function normalizedNeighborhood(value: string) {
-  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  return fixMojibake(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").toLowerCase().trim();
+}
+
+function fixMojibake(value: string) {
+  if (!/[ÃÂ]/.test(value)) return value;
+  try {
+    return decodeURIComponent(value.split("").map((char) => `%${char.charCodeAt(0).toString(16).padStart(2, "0")}`).join(""));
+  } catch {
+    return value;
+  }
 }
 
 function zonesForCompany(company_id: ID) {
-  const existing = demoDeliveryZones.filter((zone) => zone.company_id === company_id);
+  const existing = demoDeliveryZones.filter((zone) => zone.company_id === company_id).map((zone) => ({ ...zone, neighborhood: fixMojibake(zone.neighborhood) }));
   const existingNames = new Set(existing.map((zone) => normalizedNeighborhood(zone.neighborhood)));
   return [
     ...existing,
     ...portoAlegreNeighborhoods
+      .map(fixMojibake)
       .filter((neighborhood) => !existingNames.has(normalizedNeighborhood(neighborhood)))
       .map((neighborhood, index) => ({ id: `zon_${company_id}_${index}`, company_id, neighborhood, fee: 0, estimated_minutes: "A combinar", active: true })),
   ];
