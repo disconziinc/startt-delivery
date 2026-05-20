@@ -17,6 +17,8 @@ import {
 
 export const DATABASE_STORAGE_KEY = "startt_delivery_saas_database_v2";
 export const DATABASE_SYNC_ERROR_EVENT = "startt:database-sync-error";
+const PUBLIC_STORAGE_BUCKET = "startt-public";
+const allowLocalDatabaseFallback = import.meta.env.DEV || import.meta.env.VITE_ALLOW_LOCAL_DATABASE === "true";
 
 const tableNames = [
   "companies",
@@ -156,6 +158,7 @@ function withDefaults(parsed: Partial<MockDatabaseState> = {}): MockDatabaseStat
 }
 
 function readFallbackSnapshot(): MockDatabaseState {
+  if (!allowLocalDatabaseFallback) return initialMockDatabase;
   try {
     const stored = localStorage.getItem(DATABASE_STORAGE_KEY);
     if (!stored) return initialMockDatabase;
@@ -166,6 +169,11 @@ function readFallbackSnapshot(): MockDatabaseState {
 }
 
 function writeFallbackSnapshot(state: MockDatabaseState) {
+  if (!allowLocalDatabaseFallback) {
+    const error = new Error("Backend persistente não configurado. Dados principais não podem ser salvos em localStorage em produção.");
+    window.dispatchEvent(new CustomEvent(DATABASE_SYNC_ERROR_EVENT, { detail: error }));
+    throw error;
+  }
   localStorage.setItem(DATABASE_STORAGE_KEY, JSON.stringify(state));
   window.dispatchEvent(new CustomEvent("startt:database-changed", { detail: state }));
 }
@@ -219,7 +227,10 @@ export function getInitialDatabaseSnapshot(): MockDatabaseState {
 }
 
 export async function loadDatabaseSnapshot(): Promise<MockDatabaseState> {
-  if (!isSupabaseConfigured) return readFallbackSnapshot();
+  if (!isSupabaseConfigured) {
+    if (allowLocalDatabaseFallback) return readFallbackSnapshot();
+    throw new Error("Supabase não configurado. Configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no ambiente de produção.");
+  }
 
   try {
     const [
@@ -285,8 +296,13 @@ export async function loadDatabaseSnapshot(): Promise<MockDatabaseState> {
 
 export async function persistDatabaseSnapshot(state: MockDatabaseState) {
   if (!isSupabaseConfigured) {
-    writeFallbackSnapshot(state);
-    return;
+    if (allowLocalDatabaseFallback) {
+      writeFallbackSnapshot(state);
+      return;
+    }
+    const error = new Error("Supabase não configurado. Alteração principal não foi salva em backend persistente.");
+    window.dispatchEvent(new CustomEvent(DATABASE_SYNC_ERROR_EVENT, { detail: error }));
+    throw error;
   }
 
   try {
@@ -486,4 +502,18 @@ export async function deletePlan(planId: string) {
   if (countError) throw countError;
   if (count) throw new Error("Plano em uso por uma empresa.");
   return deleteById("plans", planId);
+}
+
+export async function uploadPublicImage(companyId: string, kind: string, file: File) {
+  if (!isSupabaseConfigured || !supabase) return "";
+  const extension = file.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || "png";
+  const path = `companies/${companyId}/${kind}-${Date.now()}.${extension}`;
+  const { error } = await supabase.storage.from(PUBLIC_STORAGE_BUCKET).upload(path, file, {
+    cacheControl: "60",
+    contentType: file.type || "image/png",
+    upsert: true,
+  });
+  if (error) throw error;
+  const { data } = supabase.storage.from(PUBLIC_STORAGE_BUCKET).getPublicUrl(path);
+  return `${data.publicUrl}?v=${Date.now()}`;
 }

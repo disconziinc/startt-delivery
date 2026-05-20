@@ -70,6 +70,7 @@ import {
   getInitialDatabaseSnapshot,
   loadDatabaseSnapshot,
   persistDatabaseSnapshot,
+  uploadPublicImage,
 } from "./services/database";
 import "./index.css";
 
@@ -1955,8 +1956,8 @@ function CompanySettings({ company, voucherBrands, settings, printSettings, setD
     <CrudShell title="Configurações" description="Essas configs alteram o cardápio público da empresa.">
       <div className="grid gap-5 rounded-2xl border border-black/10 bg-white p-4 shadow-card">
         <div className="grid gap-4 lg:grid-cols-2">
-          <ImageUpload label="Logo da loja" value={form.logo_url} onChange={(value) => setForm({ ...form, logo_url: value })} />
-          <ImageUpload label="Banner do cardápio" value={form.banner_url || form.hero_image} onChange={(value) => setForm({ ...form, banner_url: value, hero_image: value })} />
+          <ImageUpload label="Logo da loja" value={form.logo_url} storage={{ companyId: company.id, kind: "logo" }} onChange={(value) => setForm({ ...form, logo_url: value })} />
+          <ImageUpload label="Banner do cardápio" value={form.banner_url || form.hero_image} storage={{ companyId: company.id, kind: "banner" }} onChange={(value) => setForm({ ...form, banner_url: value, hero_image: value })} />
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           <Input placeholder="Nome da empresa" value={form.name} onChange={(value) => setForm({ ...form, name: value })} />
@@ -2365,15 +2366,20 @@ function FormModal({ open, title, onClose, children }: { open: boolean; title: s
 function QuickLink({ href, title, text, icon }: { href: string; title: string; text: string; icon: React.ReactNode }) {
   return <a href={href} className="flex items-center gap-3 rounded-2xl border border-black/10 bg-white p-4 transition hover:-translate-y-0.5 hover:shadow-card-hover"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-startt-rose text-startt-green">{icon}</span><span><strong className="block">{title}</strong><small className="text-startt-muted">{text}</small></span></a>;
 }
-function ImageUpload({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function ImageUpload({ label, value, storage, onChange }: { label: string; value: string; storage?: { companyId: string; kind: string }; onChange: (value: string) => void }) {
   const [dragging, setDragging] = useState(false);
+  const [uploading, setUploading] = useState(false);
   async function applyFile(file?: File) {
     if (!file) return;
     try {
-      onChange(await readImageAsDataUrl(file));
-      notify("success", "Imagem carregada com preview local.");
+      setUploading(true);
+      const uploadedUrl = storage ? await uploadPublicImage(storage.companyId, storage.kind, file) : "";
+      onChange(uploadedUrl || await readImageAsDataUrl(file));
+      notify("success", uploadedUrl ? "Imagem enviada para o storage e salva." : "Imagem carregada com preview local.");
     } catch {
       notify("error", "Envie um arquivo de imagem válido.");
+    } finally {
+      setUploading(false);
     }
   }
   return (
@@ -2389,8 +2395,8 @@ function ImageUpload({ label, value, onChange }: { label: string; value: string;
         <div className="grid gap-3 sm:grid-cols-[120px_1fr] sm:items-center">
           <img className="h-32 w-full rounded-xl object-cover sm:h-24" src={value || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=900&q=80"} alt="" onError={(event) => { event.currentTarget.src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=900&q=80"; }} />
           <div className="grid gap-1 text-sm text-startt-muted">
-            <strong className="inline-flex items-center gap-2 text-startt-ink"><UploadCloud size={18} /> Arraste uma imagem ou toque para escolher</strong>
-            <span>Funciona com galeria do celular, drag and drop no desktop e salva como Base64 quando não houver storage.</span>
+            <strong className="inline-flex items-center gap-2 text-startt-ink"><UploadCloud size={18} /> {uploading ? "Enviando..." : "Arraste uma imagem ou toque para escolher"}</strong>
+            <span>{storage ? "Envia para o storage público do Supabase e salva a URL no banco." : "Funciona com galeria do celular, drag and drop no desktop e salva como Base64 no modo local."}</span>
           </div>
         </div>
       </label>
