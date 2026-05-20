@@ -83,6 +83,7 @@ export type Category = {
   id: ID;
   company_id: ID;
   name: string;
+  emoji?: string;
   sort_order: number;
   active: boolean;
 };
@@ -411,14 +412,14 @@ export const initialMockDatabase: MockDatabaseState = {
     { id: "usr_bur_owner", company_id: "cmp_burguerpaulo", name: "Paulo Mendes", email: "admin@burguerdopaulo.com", password: "Startt123", role: "dono", is_active: true, created_at: now },
   ],
   categories: [
-    { id: "cat_dog_1", company_id: "cmp_dogexpress", name: "Dogs", sort_order: 1, active: true },
-    { id: "cat_dog_2", company_id: "cmp_dogexpress", name: "Combos", sort_order: 2, active: true },
-    { id: "cat_dog_3", company_id: "cmp_dogexpress", name: "Bebidas", sort_order: 3, active: true },
-    { id: "cat_piz_1", company_id: "cmp_pizzariajoao", name: "Pizzas", sort_order: 1, active: true },
-    { id: "cat_piz_2", company_id: "cmp_pizzariajoao", name: "Calzones", sort_order: 2, active: true },
-    { id: "cat_piz_3", company_id: "cmp_pizzariajoao", name: "Bebidas", sort_order: 3, active: true },
-    { id: "cat_bur_1", company_id: "cmp_burguerdopaulo", name: "Hambúrgueres", sort_order: 1, active: true },
-    { id: "cat_bur_2", company_id: "cmp_burguerdopaulo", name: "Combos", sort_order: 2, active: true },
+    { id: "cat_dog_1", company_id: "cmp_dogexpress", name: "Dogs", emoji: "🌭", sort_order: 1, active: true },
+    { id: "cat_dog_2", company_id: "cmp_dogexpress", name: "Combos", emoji: "🍟", sort_order: 2, active: true },
+    { id: "cat_dog_3", company_id: "cmp_dogexpress", name: "Bebidas", emoji: "🥤", sort_order: 3, active: true },
+    { id: "cat_piz_1", company_id: "cmp_pizzariajoao", name: "Pizzas", emoji: "🍕", sort_order: 1, active: true },
+    { id: "cat_piz_2", company_id: "cmp_pizzariajoao", name: "Calzones", emoji: "🥟", sort_order: 2, active: true },
+    { id: "cat_piz_3", company_id: "cmp_pizzariajoao", name: "Bebidas", emoji: "🥤", sort_order: 3, active: true },
+    { id: "cat_bur_1", company_id: "cmp_burguerdopaulo", name: "Hambúrgueres", emoji: "🍔", sort_order: 1, active: true },
+    { id: "cat_bur_2", company_id: "cmp_burguerdopaulo", name: "Combos", emoji: "🍟", sort_order: 2, active: true },
   ].map((category) => category.company_id === "cmp_burguerdopaulo" ? { ...category, company_id: "cmp_burguerpaulo" } : category),
   products: [
     { id: "prd_dog_1", company_id: "cmp_dogexpress", category_id: "cat_dog_1", name: "Dog Startt Clássico", description: "Pão macio, salsicha premium, molho da casa, batata palha e milho.", price: 22.9, image: "https://images.unsplash.com/photo-1619740455993-9e612b1af08a?auto=format&fit=crop&w=900&q=80", ingredients: "Pão, salsicha premium, milho, batata palha, ketchup, maionese e molho da casa", preparation_time: 12, featured: true, active: true, badge: "Mais pedido" },

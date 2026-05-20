@@ -17,6 +17,7 @@ body {
   font-family: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  overflow-x: hidden;
 }
 
 h1, h2, h3, h4, .font-display {
@@ -46,6 +47,34 @@ button:not(:disabled):active {
 
 img {
   background: #f3eee8;
+  max-width: 100%;
+}
+
+#root {
+  min-width: 0;
+}
+
+input,
+select,
+textarea {
+  max-width: 100%;
+}
+
+@media (max-width: 640px) {
+  body {
+    background: #f7f2eb;
+  }
+
+  .shadow-card,
+  .shadow-drawer {
+    box-shadow: 0 14px 36px -28px rgba(20,17,15,.55);
+  }
+
+  table,
+  pre,
+  textarea {
+    overflow-wrap: anywhere;
+  }
 }
 
 .glass-panel {

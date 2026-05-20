@@ -114,6 +114,10 @@ function withDefaults(parsed: Partial<MockDatabaseState> = {}): MockDatabaseStat
     ...product,
     ingredients: product.ingredients || product.description || "",
   }));
+  const categories = (parsed.categories || initialMockDatabase.categories).map((category) => ({
+    ...category,
+    emoji: category.emoji || "",
+  }));
   const masterSource = parsed.master_users?.length ? parsed.master_users : initialMockDatabase.master_users;
   const hasDefaultMaster = masterSource.some((user) => user.email.toLowerCase() === defaultMasterUser.email);
   const master_users = (hasDefaultMaster ? masterSource : [defaultMasterUser, ...masterSource]).map((user) => {
@@ -177,7 +181,7 @@ function withDefaults(parsed: Partial<MockDatabaseState> = {}): MockDatabaseStat
     updated_at: brand.updated_at || brand.created_at || new Date().toISOString(),
   }));
 
-  return { ...initialMockDatabase, ...parsed, plans, companies, products, master_users, delivery_zones, customers, orders, settings, voucher_brands };
+  return { ...initialMockDatabase, ...parsed, plans, companies, products, categories, master_users, delivery_zones, customers, orders, settings, voucher_brands };
 }
 
 function readFallbackSnapshot(): MockDatabaseState {
@@ -239,7 +243,17 @@ async function deleteById(table: TableName, id: string) {
 async function syncTable(table: TableName, rows: unknown[], key: "id" | "company_id" = "id") {
   const client = requireSupabase();
   if (rows.length) {
-    const { error } = await client.from(table).upsert(rows.map((row) => toSupabaseRow(table, row)) as never, { onConflict: key });
+    const sanitizedRows = rows.map((row) => toSupabaseRow(table, row));
+    const { error } = await client.from(table).upsert(sanitizedRows as never, { onConflict: key });
+    if (error && table === "categories" && /emoji/i.test(error.message)) {
+      const fallbackRows = sanitizedRows.map((row) => {
+        const { emoji: _emoji, ...rest } = row as Record<string, unknown>;
+        return rest;
+      });
+      const { error: retryError } = await client.from(table).upsert(fallbackRows as never, { onConflict: key });
+      if (retryError) throw retryError;
+      return;
+    }
     if (error) throw error;
   }
 }

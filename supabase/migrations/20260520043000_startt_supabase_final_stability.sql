@@ -104,6 +104,7 @@ create table if not exists categories (
   id text primary key,
   company_id text not null,
   name text not null,
+  emoji text not null default '',
   sort_order integer not null default 1,
   active boolean not null default true
 );
@@ -309,6 +310,7 @@ alter table users add column if not exists created_at timestamptz not null defau
 
 alter table categories add column if not exists company_id text not null default '';
 alter table categories add column if not exists name text not null default '';
+alter table categories add column if not exists emoji text not null default '';
 alter table categories add column if not exists sort_order integer not null default 1;
 alter table categories add column if not exists active boolean not null default true;
 

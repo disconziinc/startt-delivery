@@ -119,6 +119,7 @@ create table if not exists categories (
   id text primary key,
   company_id text not null references companies(id) on delete cascade,
   name text not null,
+  emoji text not null default '',
   sort_order integer not null default 1,
   active boolean not null default true
 );
@@ -281,6 +282,7 @@ alter table customers add column if not exists normalized_phone text not null de
 alter table customers add column if not exists updated_at timestamptz not null default now();
 alter table customers add column if not exists total_orders integer not null default 0;
 alter table companies add column if not exists updated_at timestamptz;
+alter table categories add column if not exists emoji text not null default '';
 
 alter table orders add column if not exists customer_name text not null default '';
 alter table orders add column if not exists customer_phone text not null default '';
