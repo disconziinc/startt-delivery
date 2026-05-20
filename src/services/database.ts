@@ -21,21 +21,21 @@ const PUBLIC_STORAGE_BUCKET = "startt-public";
 const allowLocalDatabaseFallback = import.meta.env.DEV || import.meta.env.VITE_ALLOW_LOCAL_DATABASE === "true";
 
 const tableNames = [
-  "companies",
   "plans",
+  "companies",
   "master_users",
   "users",
   "categories",
   "products",
-  "orders",
-  "order_items",
   "customers",
   "voucher_brands",
   "delivery_zones",
   "coupons",
   "settings",
-  "cash_sales",
   "print_settings",
+  "orders",
+  "order_items",
+  "cash_sales",
   "reports",
 ] as const;
 
@@ -50,6 +50,28 @@ const defaultMasterUser = {
 
 type TableName = (typeof tableNames)[number];
 type SnapshotKey = keyof MockDatabaseState;
+
+const nullableDateFields = new Set([
+  "companies.next_due_date",
+  "companies.last_payment_date",
+  "customers.last_order_at",
+  "coupons.expires_at",
+  "orders.archived_at",
+]);
+
+const frontendOnlyFields: Partial<Record<TableName, string[]>> = {
+  orders: ["removedFromDashboard"],
+};
+
+function toSupabaseRow<T>(table: TableName, row: T): T {
+  const cleaned: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(row as Record<string, unknown>)) {
+    if (frontendOnlyFields[table]?.includes(key)) continue;
+    if (value === undefined) continue;
+    cleaned[key] = nullableDateFields.has(`${table}.${key}`) && value === "" ? null : value;
+  }
+  return cleaned as T;
+}
 
 function fixMojibake(value = "") {
   if (!/[ÃÂ]/.test(value)) return value;
@@ -193,7 +215,7 @@ async function selectAll<T>(table: TableName): Promise<T[]> {
 async function insertRow<T>(table: TableName, row: T): Promise<T> {
   if (!isSupabaseConfigured) return row;
   const client = requireSupabase();
-  const { data, error } = await client.from(table).insert(row as never).select("*").single();
+  const { data, error } = await client.from(table).insert(toSupabaseRow(table, row) as never).select("*").single();
   if (error) throw error;
   return data as T;
 }
@@ -201,7 +223,7 @@ async function insertRow<T>(table: TableName, row: T): Promise<T> {
 async function updateRow<T extends { id: string }>(table: TableName, row: T): Promise<T> {
   if (!isSupabaseConfigured) return row;
   const client = requireSupabase();
-  const { data, error } = await client.from(table).update(row as never).eq("id", row.id).select("*").single();
+  const { data, error } = await client.from(table).update(toSupabaseRow(table, row) as never).eq("id", row.id).select("*").single();
   if (error) throw error;
   return data as T;
 }
@@ -216,7 +238,7 @@ async function deleteById(table: TableName, id: string) {
 async function syncTable(table: TableName, rows: unknown[], key: "id" | "company_id" = "id") {
   const client = requireSupabase();
   if (rows.length) {
-    const { error } = await client.from(table).upsert(rows as never, { onConflict: key });
+    const { error } = await client.from(table).upsert(rows.map((row) => toSupabaseRow(table, row)) as never, { onConflict: key });
     if (error) throw error;
   }
 }
@@ -435,7 +457,10 @@ export async function createCompany(company: Company, defaults?: { user?: User; 
     }));
     return company;
   }
-  return insertRow<Company>("companies", company);
+  const created = await insertRow<Company>("companies", company);
+  if (defaults?.settings) await insertRow<Settings>("settings", defaults.settings);
+  if (defaults?.user) await insertRow<User>("users", defaults.user);
+  return created;
 }
 
 export async function updateCompany(company: Company) {

@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import QRCode from "qrcode";
 import {
@@ -559,10 +559,18 @@ function App() {
   const [dbState, setDbState] = useState<MockDatabaseState>(() => getInitialDatabaseSnapshot());
   const [databaseReady, setDatabaseReady] = useState(false);
   const [databaseError, setDatabaseError] = useState("");
+  const [savePulse, setSavePulse] = useState(0);
+  const pendingSaveRef = useRef(false);
+  const savingRef = useRef(false);
+  const refreshInFlightRef = useRef(false);
   const db = useMemo(() => createDatabaseApi(dbState), [dbState]);
   const parts = window.location.pathname.split("/").filter(Boolean);
   const withToast = (node: React.ReactNode) => <><ToastHost />{node}</>;
   const companyForSeo = parts[0] ? db.getCompanyBySlug(parts[0]) : undefined;
+  const setPersistentDbState = useCallback((action: React.SetStateAction<MockDatabaseState>) => {
+    pendingSaveRef.current = true;
+    setDbState(action);
+  }, []);
 
   useEffect(() => {
     if (!parts[0] || ["sobre", "contatos"].includes(parts[0])) {
@@ -605,24 +613,37 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!databaseReady) return;
-    persistDatabaseSnapshot(dbState)
+    if (!databaseReady || !pendingSaveRef.current || savingRef.current) return;
+    const snapshot = dbState;
+    pendingSaveRef.current = false;
+    savingRef.current = true;
+    persistDatabaseSnapshot(snapshot)
       .then(() => setDatabaseError(""))
-      .catch(() => setDatabaseError("Falha ao salvar no banco. A alteração não foi confirmada para outros dispositivos."));
-  }, [dbState, databaseReady]);
+      .catch(() => setDatabaseError("Falha ao salvar no banco. A alteração não foi confirmada para outros dispositivos. Verifique RLS, colunas e variáveis do Supabase."))
+      .finally(() => {
+        savingRef.current = false;
+        if (pendingSaveRef.current) setSavePulse((value) => value + 1);
+      });
+  }, [dbState, databaseReady, savePulse]);
 
   useEffect(() => {
     function refreshFromStorage(event?: StorageEvent) {
       if (event && event.key !== DATABASE_STORAGE_KEY) return;
+      if (savingRef.current || pendingSaveRef.current) return;
       loadDatabaseSnapshot().then(setDbState);
     }
     function refreshFromBackend() {
+      if (savingRef.current || pendingSaveRef.current || refreshInFlightRef.current) return;
+      refreshInFlightRef.current = true;
       loadDatabaseSnapshot()
         .then((snapshot) => {
           setDbState(snapshot);
           setDatabaseError("");
         })
-        .catch(() => setDatabaseError("Não foi possível atualizar os dados do banco."));
+        .catch(() => setDatabaseError("Não foi possível atualizar os dados do banco. A conexão com o Supabase pode estar instável."))
+        .finally(() => {
+          refreshInFlightRef.current = false;
+        });
     }
     function handleVisibility() {
       if (document.visibilityState === "visible") refreshFromBackend();
@@ -647,7 +668,7 @@ function App() {
   const shell = (node: React.ReactNode) => withToast(<>{databaseError && <div className="sticky top-0 z-[70] border-b border-amber-300 bg-amber-100 px-4 py-2 text-center text-sm font-black text-amber-900">{databaseError}</div>}{node}</>);
 
   if (parts[0] === "master") {
-    return shell(<MasterApp db={db} setDbState={setDbState} screen={(parts[1] as MasterScreen) || "dashboard"} login={parts[1] === "login"} />);
+    return shell(<MasterApp db={db} setDbState={setPersistentDbState} screen={(parts[1] as MasterScreen) || "dashboard"} login={parts[1] === "login"} />);
   }
 
   if (!parts[0] || parts[0] === "sobre" || parts[0] === "contatos") return shell(<InstitutionalLanding />);
@@ -657,14 +678,14 @@ function App() {
 
   if (parts[1] === "admin") {
     const screen = (parts[2] === "login" ? "dashboard" : parts[2] || "dashboard") as AdminScreen;
-    return shell(<CompanyAdmin db={db} setDbState={setDbState} company={company} screen={screen} login={parts[2] === "login"} />);
+    return shell(<CompanyAdmin db={db} setDbState={setPersistentDbState} company={company} screen={screen} login={parts[2] === "login"} />);
   }
 
   if (parts[1] === "checkout") {
-    return shell(<PublicMenu db={db} setDbState={setDbState} company={company} checkoutOnly />);
+    return shell(<PublicMenu db={db} setDbState={setPersistentDbState} company={company} checkoutOnly />);
   }
 
-  return shell(<PublicMenu db={db} setDbState={setDbState} company={company} />);
+  return shell(<PublicMenu db={db} setDbState={setPersistentDbState} company={company} />);
 }
 
 function ToastHost() {
