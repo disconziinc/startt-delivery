@@ -18,6 +18,7 @@ import {
 export const DATABASE_STORAGE_KEY = "startt_delivery_saas_database_v2";
 export const DATABASE_SYNC_ERROR_EVENT = "startt:database-sync-error";
 const PUBLIC_STORAGE_BUCKET = "startt-public";
+const COMPANY_ROUTE_CACHE_PREFIX = "startt_company_route_cache:";
 const allowLocalDatabaseFallback = import.meta.env.DEV || import.meta.env.VITE_ALLOW_LOCAL_DATABASE === "true";
 
 const tableNames = [
@@ -246,6 +247,25 @@ async function syncTable(table: TableName, rows: unknown[], key: "id" | "company
 export function getInitialDatabaseSnapshot(): MockDatabaseState {
   if (isSupabaseConfigured) return initialMockDatabase;
   return readFallbackSnapshot();
+}
+
+export function getCachedCompanyRouteSnapshot(slug: string): MockDatabaseState | null {
+  try {
+    const raw = localStorage.getItem(`${COMPANY_ROUTE_CACHE_PREFIX}${slug}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { snapshot?: Partial<MockDatabaseState> };
+    return parsed.snapshot ? withDefaults(parsed.snapshot) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function cacheCompanyRouteSnapshot(slug: string, snapshot: MockDatabaseState) {
+  try {
+    localStorage.setItem(`${COMPANY_ROUTE_CACHE_PREFIX}${slug}`, JSON.stringify({ cached_at: new Date().toISOString(), snapshot }));
+  } catch {
+    // Cache publico e apenas acelerador. Se falhar, o Supabase continua sendo a fonte real.
+  }
 }
 
 export async function loadDatabaseSnapshot(): Promise<MockDatabaseState> {

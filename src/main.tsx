@@ -65,8 +65,10 @@ import {
   VoucherBrand,
 } from "./data/mockDatabase";
 import {
+  cacheCompanyRouteSnapshot,
   DATABASE_STORAGE_KEY,
   DATABASE_SYNC_ERROR_EVENT,
+  getCachedCompanyRouteSnapshot,
   getInitialDatabaseSnapshot,
   loadCompanyRouteSnapshot,
   loadDatabaseSnapshot,
@@ -557,17 +559,18 @@ function openThermalPrintable(title: string, html: string) {
 }
 
 function App() {
-  const [dbState, setDbState] = useState<MockDatabaseState>(() => getInitialDatabaseSnapshot());
+  const parts = window.location.pathname.split("/").filter(Boolean);
+  const companyRouteSlug = parts[0] && !["master", "sobre", "contatos"].includes(parts[0]) ? parts[0] : "";
+  const companyRouteNeedsAdminData = Boolean(companyRouteSlug && parts[1] === "admin");
+  const [dbState, setDbState] = useState<MockDatabaseState>(() => getCachedCompanyRouteSnapshot(companyRouteSlug) || getInitialDatabaseSnapshot());
   const [databaseReady, setDatabaseReady] = useState(false);
   const [databaseError, setDatabaseError] = useState("");
+  const [showRouteLoading, setShowRouteLoading] = useState(false);
   const [savePulse, setSavePulse] = useState(0);
   const pendingSaveRef = useRef(false);
   const savingRef = useRef(false);
   const refreshInFlightRef = useRef(false);
   const db = useMemo(() => createDatabaseApi(dbState), [dbState]);
-  const parts = window.location.pathname.split("/").filter(Boolean);
-  const companyRouteSlug = parts[0] && !["master", "sobre", "contatos"].includes(parts[0]) ? parts[0] : "";
-  const companyRouteNeedsAdminData = Boolean(companyRouteSlug && parts[1] === "admin");
   const withToast = (node: React.ReactNode) => <><ToastHost />{node}</>;
   const companyForSeo = parts[0] ? db.getCompanyBySlug(parts[0]) : undefined;
   const setPersistentDbState = useCallback((action: React.SetStateAction<MockDatabaseState>) => {
@@ -598,12 +601,17 @@ function App() {
 
   useEffect(() => {
     let alive = true;
+    const loadingTimer = window.setTimeout(() => {
+      if (alive) setShowRouteLoading(true);
+    }, 700);
     const primaryLoad = companyRouteSlug ? loadCompanyRouteSnapshot(companyRouteSlug, companyRouteNeedsAdminData) : loadDatabaseSnapshot();
     primaryLoad
       .then((snapshot) => {
         if (!alive) return;
         setDbState(snapshot);
+        if (companyRouteSlug && snapshot.companies.some((company) => company.slug === companyRouteSlug)) cacheCompanyRouteSnapshot(companyRouteSlug, snapshot);
         setDatabaseError("");
+        setShowRouteLoading(false);
         if (companyRouteSlug) {
           loadDatabaseSnapshot()
             .then((fullSnapshot) => {
@@ -617,11 +625,13 @@ function App() {
       })
       .finally(() => {
         if (alive) setDatabaseReady(true);
+        window.clearTimeout(loadingTimer);
       });
     return () => {
       alive = false;
+      window.clearTimeout(loadingTimer);
     };
-  }, []);
+  }, [companyRouteSlug, companyRouteNeedsAdminData]);
 
   useEffect(() => {
     if (!databaseReady || !pendingSaveRef.current || savingRef.current) return;
@@ -685,7 +695,7 @@ function App() {
   if (!parts[0] || parts[0] === "sobre" || parts[0] === "contatos") return shell(<InstitutionalLanding />);
 
   const company = db.getCompanyBySlug(parts[0]);
-  if (!databaseReady) return shell(<CompanyLoadingScreen slug={parts[0]} />);
+  if (!company && !databaseReady) return shell(showRouteLoading ? <CompanyLoadingScreen /> : <InstantRouteShell />);
   if (!company) return shell(<NotFound message={`Não encontramos a empresa “/${parts[0]}”. Confira o link e tente novamente.`} />);
 
   if (parts[1] === "admin") {
@@ -2441,7 +2451,8 @@ function Totals({ subtotal, discount, deliveryFee, total }: { subtotal: number; 
 function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) { return <article className="group grid min-h-40 content-between rounded-3xl border border-black/10 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-card-hover"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-startt-rose text-startt-green transition group-hover:scale-105">{icon}</span><div><small className="font-bold uppercase text-startt-muted">{label}</small><strong className="mt-2 block text-3xl font-black tracking-tight">{value}</strong></div></article>; }
 function AdminHero({ company, title, description }: { company?: Company; title: string; description: string }) { return <div className="relative isolate flex min-h-72 items-end overflow-hidden rounded-3xl p-6 text-white shadow-card"><img className="absolute inset-0 -z-20 h-full w-full object-cover" src={company ? companyHeroUrl(company) : "https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?auto=format&fit=crop&w=1400&q=80"} alt="" /><div className="absolute inset-0 -z-10 bg-[linear-gradient(120deg,rgba(20,17,15,.92),rgba(20,17,15,.58),rgba(242,106,27,.22))]" /><div className="absolute right-6 top-6 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-black backdrop-blur">{company?.slug || "master"}</div><div><span className="inline-flex items-center gap-2 rounded-full bg-white/12 px-3 py-1 text-sm font-black uppercase text-startt-yellow backdrop-blur"><Building2 size={16} /> Startt Facilities</span><h1 className="mt-3 text-4xl font-black tracking-tight md:text-6xl">{title}</h1><p className="mt-3 max-w-2xl text-white/86">{description}</p></div></div>; }
 function LogoTitle({ title, subtitle }: { title: string; subtitle: string }) { return <div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-startt-ink text-2xl font-black text-white shadow-card"><span className="accent-text">S</span></span><span><strong className="block leading-tight tracking-tight">{title}</strong><small className="block text-startt-muted">{subtitle}</small></span></div>; }
-function CompanyLoadingScreen({ slug }: { slug: string }) { return <main className="grid min-h-screen place-items-center bg-[radial-gradient(circle_at_top,rgba(255,106,0,.14),transparent_34rem),#f7f4ef] px-4 py-10"><section className="grid w-[min(460px,100%)] gap-6 rounded-3xl border border-black/10 bg-white/92 p-6 text-center shadow-2xl shadow-black/10 backdrop-blur"><div className="mx-auto grid h-16 w-16 place-items-center rounded-3xl bg-startt-ink text-4xl font-black text-white shadow-card"><span className="accent-text">S</span></div><div className="grid gap-2"><p className="text-xs font-black uppercase tracking-[.18em] text-startt-green">Startt Delivery</p><h1 className="text-2xl font-black tracking-normal text-startt-ink">Carregando cardápio</h1><p className="text-sm leading-6 text-startt-muted">Buscando os dados atualizados da lancheria.</p></div><div className="grid gap-3 text-left"><div className="h-4 w-2/3 animate-pulse rounded-full bg-black/10" /><div className="grid grid-cols-[76px_1fr] gap-3 rounded-2xl border border-black/5 bg-startt-paper p-3"><div className="h-20 animate-pulse rounded-2xl bg-[linear-gradient(135deg,rgba(255,106,0,.28),rgba(10,10,10,.14))]" /><div className="grid content-center gap-3"><div className="h-3 w-full animate-pulse rounded-full bg-black/10" /><div className="h-3 w-4/5 animate-pulse rounded-full bg-black/10" /><div className="h-8 w-28 animate-pulse rounded-xl bg-startt-green/20" /></div></div><div className="h-3 w-full animate-pulse rounded-full bg-black/10" /><div className="h-3 w-5/6 animate-pulse rounded-full bg-black/10" /></div></section></main>; }
+function InstantRouteShell() { return <main className="min-h-screen bg-startt-paper" />; }
+function CompanyLoadingScreen() { return <main className="grid min-h-screen place-items-center bg-[radial-gradient(circle_at_top,rgba(255,106,0,.14),transparent_34rem),#f7f4ef] px-4 py-10"><section className="grid w-[min(460px,100%)] gap-6 rounded-3xl border border-black/10 bg-white/92 p-6 text-center shadow-2xl shadow-black/10 backdrop-blur"><div className="mx-auto grid h-16 w-16 place-items-center rounded-3xl bg-startt-ink text-4xl font-black text-white shadow-card"><span className="accent-text">S</span></div><div className="grid gap-2"><p className="text-xs font-black uppercase tracking-[.18em] text-startt-green">Startt Delivery</p><h1 className="text-2xl font-black tracking-normal text-startt-ink">Abrindo cardápio</h1></div><div className="grid gap-3 text-left"><div className="h-4 w-2/3 animate-pulse rounded-full bg-black/10" /><div className="grid grid-cols-[76px_1fr] gap-3 rounded-2xl border border-black/5 bg-startt-paper p-3"><div className="h-20 animate-pulse rounded-2xl bg-[linear-gradient(135deg,rgba(255,106,0,.28),rgba(10,10,10,.14))]" /><div className="grid content-center gap-3"><div className="h-3 w-full animate-pulse rounded-full bg-black/10" /><div className="h-3 w-4/5 animate-pulse rounded-full bg-black/10" /><div className="h-8 w-28 animate-pulse rounded-xl bg-startt-green/20" /></div></div><div className="h-3 w-full animate-pulse rounded-full bg-black/10" /><div className="h-3 w-5/6 animate-pulse rounded-full bg-black/10" /></div></section></main>; }
 function StatusCard({ company }: { company: Company }) { return <div className="premium-surface flex gap-3 rounded-2xl p-4"><span className={`mt-1 h-3 w-3 rounded-full ${company.is_open ? "bg-startt-green status-open" : "bg-startt-red"}`} /><div><strong className="block">{company.is_open ? "Loja aberta" : "Loja fechada"}</strong><span className="text-sm leading-6 text-startt-muted">{company.address}</span></div></div>; }
 function FilterButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) { return <button onClick={onClick} className={`flex min-h-11 min-w-fit items-center justify-between gap-3 rounded-2xl px-4 text-sm font-extrabold transition ${active ? "bg-startt-ink text-white shadow-card" : "bg-white text-startt-ink shadow-sm hover:bg-startt-rose"}`}>{children}<ChevronRight size={16} /></button>; }
 function Empty({ text }: { text: string }) { return <div className="grid min-h-48 place-items-center content-center gap-2 text-center text-startt-muted"><ShoppingBag size={32} /><strong className="text-startt-ink">{text}</strong></div>; }
