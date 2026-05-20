@@ -193,6 +193,42 @@ function pixText(value: string, max: number) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9 .,@+-]/g, "").trim().slice(0, max);
 }
 
+function validCpf(value: string) {
+  if (!/^\d{11}$/.test(value) || /^(\d)\1+$/.test(value)) return false;
+  const calc = (factor: number) => {
+    const total = value.slice(0, factor - 1).split("").reduce((sum, digit, index) => sum + Number(digit) * (factor - index), 0);
+    const rest = (total * 10) % 11;
+    return rest === 10 ? 0 : rest;
+  };
+  return calc(10) === Number(value[9]) && calc(11) === Number(value[10]);
+}
+
+function validCnpj(value: string) {
+  if (!/^\d{14}$/.test(value) || /^(\d)\1+$/.test(value)) return false;
+  const calc = (base: string, factors: number[]) => {
+    const sum = base.split("").reduce((total, digit, index) => total + Number(digit) * factors[index], 0);
+    const result = sum % 11;
+    return result < 2 ? 0 : 11 - result;
+  };
+  const first = calc(value.slice(0, 12), [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+  const second = calc(value.slice(0, 12) + first, [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+  return first === Number(value[12]) && second === Number(value[13]);
+}
+
+function normalizePixKey(value: string) {
+  const raw = value.trim();
+  const digits = raw.replace(/\D/g, "");
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) return { valid: true, key: raw.toLowerCase(), type: "e-mail" };
+  if (raw.startsWith("+") && /^\+\d{12,13}$/.test(raw)) return { valid: true, key: raw, type: "telefone" };
+  if (validCpf(digits)) return { valid: true, key: digits, type: "CPF" };
+  if (validCnpj(digits)) return { valid: true, key: digits, type: "CNPJ" };
+  if ((digits.length === 10 || digits.length === 11) && !raw.includes("@")) return { valid: true, key: `+55${digits}`, type: "telefone" };
+  if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13)) return { valid: true, key: `+${digits}`, type: "telefone" };
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw)) return { valid: true, key: raw.toLowerCase(), type: "chave aleatória" };
+  if (/^[A-Za-z0-9-]{32,77}$/.test(raw)) return { valid: true, key: raw, type: "chave aleatória" };
+  return { valid: false, key: raw, type: "" };
+}
+
 function emv(id: string, value: string) {
   return `${id}${String(value.length).padStart(2, "0")}${value}`;
 }
@@ -210,8 +246,9 @@ function crc16Pix(payload: string) {
 }
 
 function buildPixPayload(settings: CompanySettingsRecord | undefined, amount: number, txid: string) {
-  if (!settings?.pix_enabled || !settings.pix_key || amount <= 0) return "";
-  const merchantAccount = emv("00", "br.gov.bcb.pix") + emv("01", settings.pix_key.trim()) + (settings.pix_description ? emv("02", pixText(settings.pix_description, 72)) : "");
+  const pixKey = normalizePixKey(settings?.pix_key || "");
+  if (!settings?.pix_enabled || !pixKey.valid || amount <= 0) return "";
+  const merchantAccount = emv("00", "br.gov.bcb.pix") + emv("01", pixKey.key);
   const payloadWithoutCrc = [
     emv("00", "01"),
     emv("26", merchantAccount),
@@ -803,7 +840,7 @@ function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: Dat
   const zone = activeZones.find((item) => item.id === zoneId);
   const deliveryFee = fulfillment === "delivery" ? zone?.fee || 0 : 0;
   const total = Math.max(0, subtotal - discount) + deliveryFee;
-  const pixEnabled = Boolean(bundle.settings?.pix_enabled && bundle.settings.pix_key);
+  const pixEnabled = Boolean(bundle.settings?.pix_enabled && normalizePixKey(bundle.settings.pix_key || "").valid);
   const pixPayload = pixEnabled && checkout.payment_method === "Pix" ? buildPixPayload(bundle.settings, total, pixTxid) : "";
   const activeVoucherBrands = bundle.voucher_brands.filter((item) => item.active);
   const voucherBrand = bundle.voucher_brands.find((item) => item.id === checkout.voucher_brand_id);
@@ -1791,9 +1828,6 @@ function CompanySettings({ company, voucherBrands, settings, printSettings, setD
   const [pixForm, setPixForm] = useState({
     enabled: settings?.pix_enabled || false,
     key: settings?.pix_key || "",
-    receiverName: settings?.pix_receiver_name || company.name,
-    city: settings?.pix_city || "Porto Alegre",
-    description: settings?.pix_description || "Pedido Startt Delivery",
   });
   const [voucherOpen, setVoucherOpen] = useState(false);
   const [autoPrintOrders, setAutoPrintOrders] = useState(printSettings?.auto_print_orders || false);
@@ -1816,8 +1850,9 @@ function CompanySettings({ company, voucherBrands, settings, printSettings, setD
   }
   function savePixSettings(event: React.FormEvent) {
     event.preventDefault();
-    if (pixForm.enabled && (!pixForm.key.trim() || !pixForm.receiverName.trim() || !pixForm.city.trim())) {
-      notify("error", "Informe chave PIX, nome do recebedor e cidade para ativar PIX.");
+    const normalizedPix = normalizePixKey(pixForm.key);
+    if (pixForm.enabled && !normalizedPix.valid) {
+      notify("error", "Informe uma chave PIX válida: CPF, CNPJ, e-mail, telefone brasileiro ou chave aleatória.");
       return;
     }
     const record: CompanySettingsRecord = {
@@ -1825,10 +1860,10 @@ function CompanySettings({ company, voucherBrands, settings, printSettings, setD
       company_id: company.id,
       critical_locked: settings?.critical_locked || false,
       pix_enabled: pixForm.enabled,
-      pix_key: pixForm.key.trim(),
-      pix_receiver_name: pixForm.receiverName.trim(),
-      pix_city: pixForm.city.trim(),
-      pix_description: pixForm.description.trim(),
+      pix_key: pixForm.enabled ? normalizedPix.key : pixForm.key.trim(),
+      pix_receiver_name: settings?.pix_receiver_name || "Startt Delivery",
+      pix_city: settings?.pix_city || "Porto Alegre",
+      pix_description: "",
     };
     setDbState((current) => ({
       ...current,
@@ -1836,7 +1871,8 @@ function CompanySettings({ company, voucherBrands, settings, printSettings, setD
         ? current.settings.map((item) => item.company_id === company.id ? { ...item, ...record } : item)
         : [record, ...current.settings],
     }));
-    notify("success", pixForm.enabled ? "PIX ativado no checkout público." : "PIX desativado no checkout público.");
+    setPixForm({ ...pixForm, key: record.pix_key || "" });
+    notify("success", pixForm.enabled ? `PIX ativado no checkout público. Tipo detectado: ${normalizedPix.type}.` : "PIX desativado no checkout público.");
   }
   function saveVoucher(event: React.FormEvent) {
     event.preventDefault();
@@ -1887,18 +1923,16 @@ function CompanySettings({ company, voucherBrands, settings, printSettings, setD
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h3 className="text-lg font-black">Pagamento via PIX</h3>
-              <p className="text-sm text-startt-muted">Disponível para todos os planos. Quando ativo, o checkout gera QR Code dinâmico, copia e cola e TXID único por pedido.</p>
+              <p className="text-sm text-startt-muted">Disponível para todos os planos. Basta ativar e informar a chave PIX; o sistema gera QR Code, copia e cola e TXID automaticamente.</p>
             </div>
             <div className="flex gap-2">
               <button type="button" onClick={() => setPixForm({ ...pixForm, enabled: true })} className={`min-h-11 rounded-xl px-4 font-black ${pixForm.enabled ? "bg-startt-green text-white shadow-lg shadow-startt-green/20" : "border border-black/10 bg-white"}`}>Ativado</button>
               <button type="button" onClick={() => setPixForm({ ...pixForm, enabled: false })} className={`min-h-11 rounded-xl px-4 font-black ${!pixForm.enabled ? "bg-startt-ink text-white" : "border border-black/10 bg-white"}`}>Desativado</button>
             </div>
           </div>
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-2 md:max-w-xl">
             <Input placeholder="Chave PIX" value={pixForm.key} onChange={(key) => setPixForm({ ...pixForm, key })} />
-            <Input placeholder="Nome do recebedor" value={pixForm.receiverName} onChange={(receiverName) => setPixForm({ ...pixForm, receiverName })} />
-            <Input placeholder="Cidade" value={pixForm.city} onChange={(city) => setPixForm({ ...pixForm, city })} />
-            <Input placeholder="Descrição opcional" value={pixForm.description} onChange={(description) => setPixForm({ ...pixForm, description })} />
+            <span className="text-xs font-bold text-startt-muted">Aceita CPF, CNPJ, e-mail, telefone brasileiro ou chave aleatória. Telefones são convertidos automaticamente para +55 no QR Code.</span>
           </div>
           <button className="w-fit rounded-xl bg-startt-green px-4 py-3 font-black text-white shadow-lg shadow-startt-green/20">Salvar PIX</button>
         </form>
@@ -2053,7 +2087,7 @@ function MasterCompanies({ db, setDbState }: { db: DatabaseApi; setDbState: Reac
     const companyId = form.id || id("cmp");
     const previous = db.companies.find((item) => item.id === form.id);
     const company: Company = { id: companyId, name: form.name, slug: form.slug, logo_url: previous?.logo_url || "", banner_url: previous?.banner_url || previous?.hero_image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1600&q=80", whatsapp: form.whatsapp, address: form.address, hero_image: previous?.hero_image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1600&q=80", primary_color: form.primary_color, minimum_order: previous?.minimum_order || 25, estimated_delivery_time: previous?.estimated_delivery_time || "35-45 min", is_open: previous?.is_open ?? true, delivery_enabled: previous?.delivery_enabled ?? true, pickup_enabled: previous?.pickup_enabled ?? true, status: form.status, plan: plan?.name || "Start", is_registration_enabled: form.is_registration_enabled, plan_id: form.plan_id, subscription_status: form.subscription_status, monthly_price: parseMoney(form.monthly_price), due_day: Number(form.due_day), next_due_date: form.next_due_date, last_payment_date: previous?.last_payment_date || "", payment_notes: form.payment_notes, footer_message: previous?.footer_message || "produzido por Startt Facilities", opening_hours: previous?.opening_hours || "Aberto hoje", created_at: previous?.created_at || created };
-    setDbState((current) => ({ ...current, companies: form.id ? current.companies.map((item) => item.id === form.id ? company : item) : [company, ...current.companies], settings: form.id ? current.settings : [{ id: id("set"), company_id: companyId, critical_locked: false, pix_enabled: false, pix_key: "", pix_receiver_name: company.name, pix_city: "Porto Alegre", pix_description: "Pedido Startt Delivery" }, ...current.settings], print_settings: form.id ? current.print_settings : [{ company_id: companyId, auto_print_orders: false, auto_print_cash_sales: false, printer_name: "", paper_width: "80mm", copies: 1, footer_text: "Startt Delivery — produzido por Startt Facilities" }, ...current.print_settings], users: !form.id && form.admin_email ? [{ id: id("usr"), company_id: companyId, name: "Admin inicial", email: form.admin_email, password: form.admin_password, role: "dono", is_active: true, created_at: created }, ...current.users] : current.users }));
+    setDbState((current) => ({ ...current, companies: form.id ? current.companies.map((item) => item.id === form.id ? company : item) : [company, ...current.companies], settings: form.id ? current.settings : [{ id: id("set"), company_id: companyId, critical_locked: false, pix_enabled: false, pix_key: "" }, ...current.settings], print_settings: form.id ? current.print_settings : [{ company_id: companyId, auto_print_orders: false, auto_print_cash_sales: false, printer_name: "", paper_width: "80mm", copies: 1, footer_text: "Startt Delivery — produzido por Startt Facilities" }, ...current.print_settings], users: !form.id && form.admin_email ? [{ id: id("usr"), company_id: companyId, name: "Admin inicial", email: form.admin_email, password: form.admin_password, role: "dono", is_active: true, created_at: created }, ...current.users] : current.users }));
     setFormOpen(false);
     notify("success", form.id ? "Empresa atualizada com sucesso." : "Empresa criada com sucesso.");
   }

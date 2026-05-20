@@ -449,9 +449,9 @@ export const initialMockDatabase: MockDatabaseState = {
     { id: "oit_3", company_id: "cmp_pizzariajoao", order_id: "ord_piz_1", product_id: "prd_piz_1", name: "Pizza Margherita", quantity: 1, unit_price: 59.9, total: 59.9 },
   ],
   settings: [
-    { id: "set_dog_1", company_id: "cmp_dogexpress", critical_locked: false, pix_enabled: true, pix_key: "51992885988", pix_receiver_name: "Dog Express", pix_city: "Porto Alegre", pix_description: "Pedido Startt Delivery" },
-    { id: "set_piz_1", company_id: "cmp_pizzariajoao", critical_locked: false, pix_enabled: true, pix_key: "51992885988", pix_receiver_name: "Pizzaria do Joao", pix_city: "Porto Alegre", pix_description: "Pedido Startt Delivery" },
-    { id: "set_bur_1", company_id: "cmp_burguerpaulo", critical_locked: false, pix_enabled: true, pix_key: "51992885988", pix_receiver_name: "Burguer do Paulo", pix_city: "Porto Alegre", pix_description: "Pedido Startt Delivery" },
+    { id: "set_dog_1", company_id: "cmp_dogexpress", critical_locked: false, pix_enabled: true, pix_key: "+5551992885988" },
+    { id: "set_piz_1", company_id: "cmp_pizzariajoao", critical_locked: false, pix_enabled: true, pix_key: "+5551992885988" },
+    { id: "set_bur_1", company_id: "cmp_burguerpaulo", critical_locked: false, pix_enabled: true, pix_key: "+5551992885988" },
   ],
   cash_sales: [
     { id: "cash_dog_1", company_id: "cmp_dogexpress", items: [{ product_id: "prd_dog_1", name: "Dog Startt Clássico", quantity: 1, unit_price: 22.9, total: 22.9 }], subtotal: 22.9, discount: 0, total: 22.9, payment_method: "Dinheiro", created_by: "usr_dog_cash", created_at: now },
