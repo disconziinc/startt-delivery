@@ -183,7 +183,15 @@ export type Order = {
   card_type?: "Débito" | "Crédito";
   voucher_brand?: string;
   voucher_fee_percentage?: number;
+  payment_status?: string;
+  pix_txid?: string;
+  pix_payload?: string;
+  pix_qr_code?: string;
   customer_note?: string;
+  archived?: boolean;
+  archived_at?: string;
+  removedFromDashboard?: boolean;
+  removed_from_dashboard?: boolean;
   created_at: string;
 };
 
@@ -221,6 +229,11 @@ export type Settings = {
   id: ID;
   company_id: ID;
   critical_locked: boolean;
+  pix_enabled?: boolean;
+  pix_key?: string;
+  pix_receiver_name?: string;
+  pix_city?: string;
+  pix_description?: string;
 };
 
 export type Report = {
@@ -425,9 +438,9 @@ export const initialMockDatabase: MockDatabaseState = {
     { id: "cup_bur_1", company_id: "cmp_burguerpaulo", code: "PAULO5", type: "fixo", value: 5, minimum_order: 30, usage_limit: 50, used_count: 1, expires_at: "2026-12-31", active: true },
   ],
   orders: [
-    { id: "ord_dog_1", order_number: 10231, company_id: "cmp_dogexpress", customer_id: "cus_dog_1", status: "preparando", fulfillment: "delivery", delivery_zone_id: "zon_dog_1", subtotal: 54.8, discount: 0, delivery_fee: 7.9, total: 62.7, payment_method: "Pix", created_at: now },
+    { id: "ord_dog_1", order_number: 10231, company_id: "cmp_dogexpress", customer_id: "cus_dog_1", status: "preparando", fulfillment: "delivery", delivery_zone_id: "zon_dog_1", subtotal: 54.8, discount: 0, delivery_fee: 7.9, total: 62.7, payment_method: "Pix", payment_status: "Aguardando comprovante", pix_txid: "STDOG10231", created_at: now },
     { id: "ord_dog_2", order_number: 10232, company_id: "cmp_dogexpress", customer_id: "cus_dog_2", status: "saiu_para_entrega", fulfillment: "delivery", delivery_zone_id: "zon_dog_2", subtotal: 151.7, discount: 10, delivery_fee: 9.9, total: 151.6, payment_method: "Cartão", card_type: "Crédito", payment_details: "Cartão • Crédito", created_at: yesterday },
-    { id: "ord_piz_1", order_number: 48392, company_id: "cmp_pizzariajoao", customer_id: "cus_piz_1", status: "novo", fulfillment: "pickup", subtotal: 73.8, discount: 0, delivery_fee: 0, total: 73.8, payment_method: "Pix", created_at: now },
+    { id: "ord_piz_1", order_number: 48392, company_id: "cmp_pizzariajoao", customer_id: "cus_piz_1", status: "novo", fulfillment: "pickup", subtotal: 73.8, discount: 0, delivery_fee: 0, total: 73.8, payment_method: "Pix", payment_status: "Aguardando comprovante", pix_txid: "STPIZ48392", created_at: now },
     { id: "ord_bur_1", order_number: 39218, company_id: "cmp_burguerpaulo", customer_id: "cus_bur_1", status: "concluido", fulfillment: "delivery", delivery_zone_id: "zon_bur_1", subtotal: 54.9, discount: 0, delivery_fee: 6.9, total: 61.8, payment_method: "Dinheiro", cash_change_for: 100, calculated_change: 38.2, created_at: monthStart },
   ],
   order_items: [
@@ -436,9 +449,9 @@ export const initialMockDatabase: MockDatabaseState = {
     { id: "oit_3", company_id: "cmp_pizzariajoao", order_id: "ord_piz_1", product_id: "prd_piz_1", name: "Pizza Margherita", quantity: 1, unit_price: 59.9, total: 59.9 },
   ],
   settings: [
-    { id: "set_dog_1", company_id: "cmp_dogexpress", critical_locked: false },
-    { id: "set_piz_1", company_id: "cmp_pizzariajoao", critical_locked: false },
-    { id: "set_bur_1", company_id: "cmp_burguerpaulo", critical_locked: false },
+    { id: "set_dog_1", company_id: "cmp_dogexpress", critical_locked: false, pix_enabled: true, pix_key: "51992885988", pix_receiver_name: "Dog Express", pix_city: "Porto Alegre", pix_description: "Pedido Startt Delivery" },
+    { id: "set_piz_1", company_id: "cmp_pizzariajoao", critical_locked: false, pix_enabled: true, pix_key: "51992885988", pix_receiver_name: "Pizzaria do Joao", pix_city: "Porto Alegre", pix_description: "Pedido Startt Delivery" },
+    { id: "set_bur_1", company_id: "cmp_burguerpaulo", critical_locked: false, pix_enabled: true, pix_key: "51992885988", pix_receiver_name: "Burguer do Paulo", pix_city: "Porto Alegre", pix_description: "Pedido Startt Delivery" },
   ],
   cash_sales: [
     { id: "cash_dog_1", company_id: "cmp_dogexpress", items: [{ product_id: "prd_dog_1", name: "Dog Startt Clássico", quantity: 1, unit_price: 22.9, total: 22.9 }], subtotal: 22.9, discount: 0, total: 22.9, payment_method: "Dinheiro", created_by: "usr_dog_cash", created_at: now },

@@ -145,7 +145,9 @@ create table if not exists voucher_brands (
   company_id text not null references companies(id) on delete cascade,
   name text not null,
   fee_percentage numeric(5,2) not null default 0,
-  active boolean not null default true
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 create table if not exists delivery_zones (
@@ -196,7 +198,14 @@ create table if not exists orders (
   card_type text,
   voucher_brand text,
   voucher_fee_percentage numeric(5,2),
+  payment_status text,
+  pix_txid text,
+  pix_payload text,
+  pix_qr_code text,
   customer_note text,
+  archived boolean not null default false,
+  archived_at timestamptz,
+  removed_from_dashboard boolean not null default false,
   created_at timestamptz not null default now()
 );
 
@@ -216,7 +225,12 @@ create table if not exists order_items (
 create table if not exists settings (
   id text primary key,
   company_id text not null references companies(id) on delete cascade unique,
-  critical_locked boolean not null default false
+  critical_locked boolean not null default false,
+  pix_enabled boolean not null default false,
+  pix_key text not null default '',
+  pix_receiver_name text not null default '',
+  pix_city text not null default 'Porto Alegre',
+  pix_description text not null default ''
 );
 
 create table if not exists cash_sales (
@@ -263,7 +277,21 @@ alter table orders add column if not exists change_amount numeric(10,2) default 
 alter table orders add column if not exists card_type text;
 alter table orders add column if not exists voucher_brand text;
 alter table orders add column if not exists voucher_fee_percentage numeric(5,2);
+alter table orders add column if not exists payment_status text;
+alter table orders add column if not exists pix_txid text;
+alter table orders add column if not exists pix_payload text;
+alter table orders add column if not exists pix_qr_code text;
 alter table orders add column if not exists customer_note text;
+alter table orders add column if not exists archived boolean not null default false;
+alter table orders add column if not exists archived_at timestamptz;
+alter table orders add column if not exists removed_from_dashboard boolean not null default false;
+alter table settings add column if not exists pix_enabled boolean not null default false;
+alter table settings add column if not exists pix_key text not null default '';
+alter table settings add column if not exists pix_receiver_name text not null default '';
+alter table settings add column if not exists pix_city text not null default 'Porto Alegre';
+alter table settings add column if not exists pix_description text not null default '';
+alter table voucher_brands add column if not exists created_at timestamptz not null default now();
+alter table voucher_brands add column if not exists updated_at timestamptz not null default now();
 
 alter table plans enable row level security;
 alter table companies enable row level security;

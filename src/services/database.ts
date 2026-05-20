@@ -112,6 +112,21 @@ function withDefaults(parsed: Partial<MockDatabaseState> = {}): MockDatabaseStat
     change_for: order.change_for || order.cash_change_for || 0,
     change_amount: order.change_amount || order.calculated_change || 0,
     payment_details: order.payment_details || order.payment_method,
+    payment_status: order.payment_status || (order.payment_method === "Pix" ? "Aguardando comprovante" : undefined),
+    pix_txid: order.pix_txid || "",
+    pix_payload: order.pix_payload || "",
+    pix_qr_code: order.pix_qr_code || "",
+    archived: order.archived ?? false,
+    archived_at: order.archived_at || "",
+    removed_from_dashboard: order.removed_from_dashboard ?? order.removedFromDashboard ?? false,
+  }));
+  const settings = (parsed.settings || initialMockDatabase.settings).map((setting) => ({
+    ...setting,
+    pix_enabled: setting.pix_enabled ?? false,
+    pix_key: setting.pix_key || "",
+    pix_receiver_name: setting.pix_receiver_name || "",
+    pix_city: setting.pix_city || "Porto Alegre",
+    pix_description: setting.pix_description || "",
   }));
   const voucher_brands = (parsed.voucher_brands || initialMockDatabase.voucher_brands).map((brand) => ({
     ...brand,
@@ -119,7 +134,7 @@ function withDefaults(parsed: Partial<MockDatabaseState> = {}): MockDatabaseStat
     updated_at: brand.updated_at || brand.created_at || new Date().toISOString(),
   }));
 
-  return { ...initialMockDatabase, ...parsed, plans, companies, products, master_users, delivery_zones, customers, orders, voucher_brands };
+  return { ...initialMockDatabase, ...parsed, plans, companies, products, master_users, delivery_zones, customers, orders, settings, voucher_brands };
 }
 
 function readFallbackSnapshot(): MockDatabaseState {

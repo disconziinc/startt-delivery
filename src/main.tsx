@@ -1,5 +1,6 @@
 ﻿import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import QRCode from "qrcode";
 import {
   BarChart3,
   Bell,
@@ -57,6 +58,7 @@ import {
   Plan,
   PrintSettings,
   Product,
+  Settings as CompanySettingsRecord,
   SubscriptionStatus,
   User,
   UserRole,
@@ -156,6 +158,14 @@ function id(prefix: string) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function createPixTxid() {
+  return `ST${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 25);
+}
+
+function activeOrders(orders: Order[]) {
+  return orders.filter((order) => !order.archived && !order.removed_from_dashboard && !order.removedFromDashboard);
+}
+
 function notify(type: ToastType, message: string) {
   window.dispatchEvent(new CustomEvent("startt:toast", { detail: { type, message } }));
 }
@@ -177,6 +187,44 @@ function parseMoney(value: string | number) {
 
 function normalizeText(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+
+function pixText(value: string, max: number) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9 .,@+-]/g, "").trim().slice(0, max);
+}
+
+function emv(id: string, value: string) {
+  return `${id}${String(value.length).padStart(2, "0")}${value}`;
+}
+
+function crc16Pix(payload: string) {
+  let crc = 0xffff;
+  for (let index = 0; index < payload.length; index += 1) {
+    crc ^= payload.charCodeAt(index) << 8;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc & 0x8000) ? (crc << 1) ^ 0x1021 : crc << 1;
+      crc &= 0xffff;
+    }
+  }
+  return crc.toString(16).toUpperCase().padStart(4, "0");
+}
+
+function buildPixPayload(settings: CompanySettingsRecord | undefined, amount: number, txid: string) {
+  if (!settings?.pix_enabled || !settings.pix_key || amount <= 0) return "";
+  const merchantAccount = emv("00", "br.gov.bcb.pix") + emv("01", settings.pix_key.trim()) + (settings.pix_description ? emv("02", pixText(settings.pix_description, 72)) : "");
+  const payloadWithoutCrc = [
+    emv("00", "01"),
+    emv("26", merchantAccount),
+    emv("52", "0000"),
+    emv("53", "986"),
+    emv("54", amount.toFixed(2)),
+    emv("58", "BR"),
+    emv("59", pixText(settings.pix_receiver_name || "STARTT DELIVERY", 25).toUpperCase()),
+    emv("60", pixText(settings.pix_city || "PORTO ALEGRE", 15).toUpperCase()),
+    emv("62", emv("05", pixText(txid, 25).toUpperCase())),
+    "6304",
+  ].join("");
+  return `${payloadWithoutCrc}${crc16Pix(payloadWithoutCrc)}`;
 }
 
 function normalizePhone(value: string) {
@@ -250,6 +298,15 @@ function htmlEscape(value: string) {
 }
 
 function orderPaymentLines(order: Order) {
+  if (order.payment_method === "Pix") {
+    return [
+      "PAGAMENTO: PIX",
+      `VALOR: ${money(order.total)}`,
+      `STATUS: ${order.payment_status || "Aguardando comprovante"}`,
+      order.pix_txid ? `TXID: ${order.pix_txid}` : "",
+      order.pix_payload ? "Cliente recebeu QR Code PIX" : "",
+    ].filter(Boolean);
+  }
   const lines = [`Pagamento: ${order.payment_method}`];
   if (order.payment_method === "Dinheiro" && (order.change_for || order.cash_change_for)) {
     const changeFor = order.change_for || order.cash_change_for || 0;
@@ -727,6 +784,8 @@ function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: Dat
   const [fulfillment, setFulfillment] = useState<Fulfillment>(company.delivery_enabled ? "delivery" : "pickup");
   const [zoneId, setZoneId] = useState("");
   const [checkout, setCheckout] = useState<CheckoutState>({ name: "", phone: "", cep: "", address: "", number: "", complement: "", neighborhood: "", city: "", state: "", payment_method: "Pix" as PaymentMethod, card_type: "Débito", voucher_brand_id: "", needs_change: "Não", coupon: "", cash_change_for: "", customer_note: "" });
+  const [pixTxid, setPixTxid] = useState(createPixTxid);
+  const [pixQrCode, setPixQrCode] = useState("");
   const [phoneGateSkipped, setPhoneGateSkipped] = useState(false);
   const [phoneLookup, setPhoneLookup] = useState("");
   const [phoneLookupMessage, setPhoneLookupMessage] = useState("");
@@ -744,11 +803,29 @@ function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: Dat
   const zone = activeZones.find((item) => item.id === zoneId);
   const deliveryFee = fulfillment === "delivery" ? zone?.fee || 0 : 0;
   const total = Math.max(0, subtotal - discount) + deliveryFee;
+  const pixEnabled = Boolean(bundle.settings?.pix_enabled && bundle.settings.pix_key);
+  const pixPayload = pixEnabled && checkout.payment_method === "Pix" ? buildPixPayload(bundle.settings, total, pixTxid) : "";
   const activeVoucherBrands = bundle.voucher_brands.filter((item) => item.active);
   const voucherBrand = bundle.voucher_brands.find((item) => item.id === checkout.voucher_brand_id);
   const cashChangeFor = checkout.needs_change === "Sim" ? parseMoney(checkout.cash_change_for) || 0 : 0;
   const calculatedChange = checkout.payment_method === "Dinheiro" && cashChangeFor > 0 ? Math.max(0, cashChangeFor - total) : 0;
   const itemCount = cart.reduce((sum, item) => sum + item.qty, 0);
+
+  useEffect(() => {
+    if (!pixEnabled && checkout.payment_method === "Pix") setCheckout((current) => ({ ...current, payment_method: "Dinheiro" }));
+  }, [checkout.payment_method, pixEnabled]);
+
+  useEffect(() => {
+    let active = true;
+    if (!pixPayload) {
+      setPixQrCode("");
+      return;
+    }
+    QRCode.toDataURL(pixPayload, { margin: 1, width: 240, errorCorrectionLevel: "M" })
+      .then((dataUrl) => { if (active) setPixQrCode(dataUrl); })
+      .catch(() => { if (active) setPixQrCode(""); });
+    return () => { active = false; };
+  }, [pixPayload]);
 
   function add(product: Product) {
     setCart((current) => {
@@ -777,7 +854,7 @@ function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: Dat
     notify("info", "Telefone guardado para o checkout.");
   }
 
-  function finishOrder() {
+  async function finishOrder() {
     if (!cart.length) {
       notify("error", "Adicione pelo menos um produto antes de finalizar.");
       return;
@@ -803,6 +880,10 @@ function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: Dat
       notify("error", "Escolha a marca do vale para registrar o pagamento.");
       return;
     }
+    if (checkout.payment_method === "Pix" && !pixPayload) {
+      notify("error", "PIX indisponível. Confira a configuração da chave PIX da lancheria.");
+      return;
+    }
     const orderId = id("ord");
     const createdAt = new Date().toISOString();
     const orderNumber = nextOrderNumber(db.orders, company.id);
@@ -821,6 +902,9 @@ function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: Dat
       delivery_fee: deliveryFee,
       total,
       payment_method: checkout.payment_method,
+      payment_status: checkout.payment_method === "Pix" ? "Aguardando comprovante" : undefined,
+      pix_txid: checkout.payment_method === "Pix" ? pixTxid : undefined,
+      pix_payload: checkout.payment_method === "Pix" ? pixPayload : undefined,
       change_for: cashChangeFor,
       change_amount: calculatedChange,
       cash_change_for: cashChangeFor,
@@ -830,7 +914,8 @@ function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: Dat
       voucher_fee_percentage: voucherBrand?.fee_percentage,
       created_at: createdAt,
     }).join(" | ");
-    const order: Order = { id: orderId, order_number: orderNumber, company_id: company.id, customer_id: customerId, customer_name: checkout.name.trim(), customer_phone: checkout.phone.trim(), normalized_phone: normalizedPhone, customer_address: fullAddress, status: "novo", fulfillment, delivery_zone_id: fulfillment === "delivery" ? zoneId : undefined, subtotal, discount, delivery_fee: deliveryFee, total, payment_method: checkout.payment_method, payment_details: paymentDetails, cash_change_for: cashChangeFor, calculated_change: calculatedChange, change_for: cashChangeFor, change_amount: calculatedChange, card_type: checkout.payment_method === "Cartão" ? checkout.card_type : undefined, voucher_brand: checkout.payment_method === "Vale alimentação/refeição" ? voucherBrand?.name : undefined, voucher_fee_percentage: checkout.payment_method === "Vale alimentação/refeição" ? voucherBrand?.fee_percentage : undefined, customer_note: checkout.customer_note, created_at: createdAt };
+    const finalPixQrCode = checkout.payment_method === "Pix" && !pixQrCode ? await QRCode.toDataURL(pixPayload, { margin: 1, width: 240, errorCorrectionLevel: "M" }) : pixQrCode;
+    const order: Order = { id: orderId, order_number: orderNumber, company_id: company.id, customer_id: customerId, customer_name: checkout.name.trim(), customer_phone: checkout.phone.trim(), normalized_phone: normalizedPhone, customer_address: fullAddress, status: "novo", fulfillment, delivery_zone_id: fulfillment === "delivery" ? zoneId : undefined, subtotal, discount, delivery_fee: deliveryFee, total, payment_method: checkout.payment_method, payment_details: paymentDetails, payment_status: checkout.payment_method === "Pix" ? "Aguardando comprovante" : undefined, pix_txid: checkout.payment_method === "Pix" ? pixTxid : undefined, pix_payload: checkout.payment_method === "Pix" ? pixPayload : undefined, pix_qr_code: checkout.payment_method === "Pix" ? finalPixQrCode : undefined, cash_change_for: cashChangeFor, calculated_change: calculatedChange, change_for: cashChangeFor, change_amount: calculatedChange, card_type: checkout.payment_method === "Cartão" ? checkout.card_type : undefined, voucher_brand: checkout.payment_method === "Vale alimentação/refeição" ? voucherBrand?.name : undefined, voucher_fee_percentage: checkout.payment_method === "Vale alimentação/refeição" ? voucherBrand?.fee_percentage : undefined, customer_note: checkout.customer_note, archived: false, removed_from_dashboard: false, created_at: createdAt };
     const orderItems: OrderItem[] = cart.map((item) => ({ id: id("oit"), company_id: company.id, order_id: orderId, product_id: item.id, name: item.name, quantity: item.qty, unit_price: item.price, total: item.qty * item.price }));
     setDbState((current) => {
       const customerInState = findCustomerByPhone(current.customers, company.id, normalizedPhone);
@@ -849,6 +934,7 @@ function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: Dat
     const message = buildOrderNote(company, order, orderItems);
     window.open(`https://wa.me/${company.whatsapp}?text=${encodeURIComponent(message)}`, "_blank");
     setCart([]);
+    setPixTxid(createPixTxid());
     setCartOpen(false);
     notify("success", "Pedido criado e mensagem do WhatsApp preparada.");
   }
@@ -927,7 +1013,7 @@ function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: Dat
           </div>
         )}
       </section>
-      <CartDrawer cartOpen={cartOpen} setCartOpen={setCartOpen} cart={cart} setCart={setCart} company={company} zones={activeZones} zoneId={zoneId} setZoneId={setZoneId} checkout={checkout} setCheckout={setCheckout} fulfillment={fulfillment} setFulfillment={setFulfillment} voucherBrands={activeVoucherBrands} subtotal={subtotal} discount={discount} deliveryFee={deliveryFee} total={total} finishOrder={finishOrder} />
+      <CartDrawer cartOpen={cartOpen} setCartOpen={setCartOpen} cart={cart} setCart={setCart} company={company} zones={activeZones} zoneId={zoneId} setZoneId={setZoneId} checkout={checkout} setCheckout={setCheckout} fulfillment={fulfillment} setFulfillment={setFulfillment} voucherBrands={activeVoucherBrands} subtotal={subtotal} discount={discount} deliveryFee={deliveryFee} total={total} pixEnabled={pixEnabled} pixPayload={pixPayload} pixQrCode={pixQrCode} pixTxid={pixTxid} finishOrder={finishOrder} />
       {itemCount > 0 && !cartOpen && (
         <button onClick={() => setCartOpen(true)} className="mobile-safe-bottom fixed inset-x-4 bottom-3 z-40 flex min-h-14 items-center justify-between rounded-2xl bg-startt-green px-4 font-black text-white shadow-2xl md:hidden">
           <span className="inline-flex items-center gap-2"><ShoppingBag size={18} /> Ver pedido</span>
@@ -941,12 +1027,21 @@ function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: Dat
   );
 }
 
-function CartDrawer({ cartOpen, setCartOpen, cart, setCart, company, zones, zoneId, setZoneId, checkout, setCheckout, fulfillment, setFulfillment, voucherBrands, subtotal, discount, deliveryFee, total, finishOrder }: { cartOpen: boolean; setCartOpen: (value: boolean) => void; cart: CartItem[]; setCart: React.Dispatch<React.SetStateAction<CartItem[]>>; company: Company; zones: DeliveryZone[]; zoneId: string; setZoneId: (value: string) => void; checkout: CheckoutState; setCheckout: (value: CheckoutState) => void; fulfillment: Fulfillment; setFulfillment: (value: Fulfillment) => void; voucherBrands: VoucherBrand[]; subtotal: number; discount: number; deliveryFee: number; total: number; finishOrder: () => void }) {
+function CartDrawer({ cartOpen, setCartOpen, cart, setCart, company, zones, zoneId, setZoneId, checkout, setCheckout, fulfillment, setFulfillment, voucherBrands, subtotal, discount, deliveryFee, total, pixEnabled, pixPayload, pixQrCode, pixTxid, finishOrder }: { cartOpen: boolean; setCartOpen: (value: boolean) => void; cart: CartItem[]; setCart: React.Dispatch<React.SetStateAction<CartItem[]>>; company: Company; zones: DeliveryZone[]; zoneId: string; setZoneId: (value: string) => void; checkout: CheckoutState; setCheckout: (value: CheckoutState) => void; fulfillment: Fulfillment; setFulfillment: (value: Fulfillment) => void; voucherBrands: VoucherBrand[]; subtotal: number; discount: number; deliveryFee: number; total: number; pixEnabled: boolean; pixPayload: string; pixQrCode: string; pixTxid: string; finishOrder: () => void | Promise<void> }) {
   const [cepLoading, setCepLoading] = useState(false);
   const [cepMessage, setCepMessage] = useState("");
   const selectedZone = zones.find((zone) => zone.id === zoneId);
   const cashChangeFor = parseMoney(checkout.cash_change_for) || 0;
   const calculatedChange = checkout.payment_method === "Dinheiro" && cashChangeFor > 0 ? Math.max(0, cashChangeFor - total) : 0;
+  async function copyPixCode() {
+    if (!pixPayload) return;
+    try {
+      await navigator.clipboard.writeText(pixPayload);
+      notify("success", "Código PIX copiado.");
+    } catch {
+      notify("error", "Não foi possível copiar automaticamente. Selecione o código PIX manualmente.");
+    }
+  }
   function qty(productId: string, delta: number) {
     setCart((current) => current.map((item) => item.id === productId ? { ...item, qty: item.qty + delta } : item).filter((item) => item.qty > 0));
   }
@@ -1034,9 +1129,30 @@ function CartDrawer({ cartOpen, setCartOpen, cart, setCart, company, zones, zone
               </>}
               {fulfillment === "pickup" && <div className="grid gap-2 rounded-xl border border-black/10 bg-white p-3"><span className="text-sm font-black text-startt-ink">Endereço do cliente</span><Input placeholder="Endereço para cadastro" value={checkout.address} onChange={(value) => setCheckout({ ...checkout, address: value })} /></div>}
               <div className="grid grid-cols-2 gap-2">
-                <Select value={checkout.payment_method} onChange={(value) => setCheckout({ ...checkout, payment_method: value as PaymentMethod })}><option>Pix</option><option>Cartão</option><option>Dinheiro</option><option>Vale alimentação/refeição</option></Select>
+                <Select value={checkout.payment_method} onChange={(value) => setCheckout({ ...checkout, payment_method: value as PaymentMethod })}>{pixEnabled && <option>Pix</option>}<option>Cartão</option><option>Dinheiro</option><option>Vale alimentação/refeição</option></Select>
                 <Input placeholder="Cupom" value={checkout.coupon} onChange={(value) => setCheckout({ ...checkout, coupon: value })} />
               </div>
+              {checkout.payment_method === "Pix" && pixEnabled && (
+                <div className="grid gap-3 rounded-2xl border border-startt-green/20 bg-gradient-to-br from-startt-green/10 to-white p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <span className="text-xs font-black uppercase tracking-[.16em] text-startt-green">PIX dinâmico</span>
+                      <h3 className="mt-1 text-lg font-black text-startt-ink">{money(total)}</h3>
+                      <p className="mt-1 text-sm font-semibold text-startt-muted">Após o pagamento, envie o comprovante pelo WhatsApp.</p>
+                    </div>
+                    <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-startt-green shadow-sm">TXID {pixTxid}</span>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-[180px_1fr] sm:items-center">
+                    <div className="grid place-items-center rounded-2xl bg-white p-3 shadow-sm">
+                      {pixQrCode ? <img className="h-40 w-40 rounded-xl object-contain" src={pixQrCode} alt="QR Code PIX do pedido" /> : <div className="grid h-40 w-40 place-items-center rounded-xl bg-startt-paper text-center text-xs font-bold text-startt-muted">Gerando QR Code PIX...</div>}
+                    </div>
+                    <div className="grid gap-2">
+                      <textarea readOnly className="min-h-28 rounded-xl border border-black/10 bg-white px-3 py-2 font-mono text-xs leading-5 text-startt-ink outline-none" value={pixPayload} />
+                      <button type="button" onClick={copyPixCode} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-startt-green px-4 text-sm font-black text-white shadow-lg shadow-startt-green/20"><ClipboardList size={16} /> Copiar código PIX</button>
+                    </div>
+                  </div>
+                </div>
+              )}
               {checkout.payment_method === "Dinheiro" && <div className="grid gap-2 rounded-xl border border-black/10 bg-white p-3"><span className="text-sm font-black text-startt-ink">Precisa de troco?</span><Select value={checkout.needs_change} onChange={(value) => setCheckout({ ...checkout, needs_change: value as "Não" | "Sim", cash_change_for: value === "Sim" ? checkout.cash_change_for : "" })}><option>Não</option><option>Sim</option></Select>{checkout.needs_change === "Sim" && <Input placeholder="Troco para quanto?" value={checkout.cash_change_for} onChange={(value) => setCheckout({ ...checkout, cash_change_for: value })} />}{checkout.needs_change === "Sim" && cashChangeFor > 0 && <span className="text-sm font-bold text-startt-muted">Troco para {money(cashChangeFor)} • Troco estimado: {money(calculatedChange)}</span>}</div>}
               {checkout.payment_method === "Cartão" && <div className="grid gap-2 rounded-xl border border-black/10 bg-white p-3"><span className="text-sm font-black text-startt-ink">Tipo do cartão</span><Select value={checkout.card_type} onChange={(value) => setCheckout({ ...checkout, card_type: value as "Débito" | "Crédito" })}><option>Débito</option><option>Crédito</option></Select></div>}
               {checkout.payment_method === "Vale alimentação/refeição" && <div className="grid gap-2 rounded-xl border border-black/10 bg-white p-3"><span className="text-sm font-black text-startt-ink">Marca do vale</span><Select value={checkout.voucher_brand_id} onChange={(value) => setCheckout({ ...checkout, voucher_brand_id: value })}><option value="">Selecione uma marca</option>{voucherBrands.map((brand) => <option key={brand.id} value={brand.id}>{brand.name}{brand.fee_percentage ? ` • ${brand.fee_percentage}%` : ""}</option>)}</Select>{!voucherBrands.length && <span className="text-xs font-bold text-startt-muted">Esta lancheria ainda não configurou marcas de vale ativas.</span>}</div>}
@@ -1230,7 +1346,7 @@ function AdminContent({ screen, db, setDbState, company, user, printThermalOrder
   if (screen === "relatorios") return <Reports company={company} bundle={bundle} />;
   if (screen === "fretes") return <ZonesManager company={company} zones={bundle.delivery_zones} setDbState={setDbState} />;
   if (screen === "impressao") return <PrintManager company={company} settings={bundle.print_settings} setDbState={setDbState} />;
-  if (screen === "configuracoes") return <CompanySettings company={company} voucherBrands={bundle.voucher_brands} printSettings={bundle.print_settings} setDbState={setDbState} />;
+  if (screen === "configuracoes") return <CompanySettings company={company} voucherBrands={bundle.voucher_brands} settings={bundle.settings} printSettings={bundle.print_settings} setDbState={setDbState} />;
   return <UsersManager company={company} users={bundle.users} plan={plan} setDbState={setDbState} />;
 }
 
@@ -1292,21 +1408,22 @@ function AccountSettings({ company, user, setDbState }: { company: Company; user
 function Dashboard({ company, bundle }: { company: Company; bundle: ReturnType<DatabaseApi["getCompanyBundle"]> }) {
   const [start, setStart] = useState(todayInput());
   const [end, setEnd] = useState(todayInput());
-  const online = bundle.orders.filter((item) => isInPeriod(item.created_at, start, end));
+  const visibleOrders = activeOrders(bundle.orders);
+  const online = visibleOrders.filter((item) => isInPeriod(item.created_at, start, end));
   const cash = bundle.cash_sales.filter((item) => isInPeriod(item.created_at, start, end));
   const all = [...online.map((item) => ({ date: item.created_at, total: item.total })), ...cash.map((item) => ({ date: item.created_at, total: item.total }))];
   const today = new Date().toISOString().slice(0, 10);
   const month = today.slice(0, 7);
-  const salesToday = [...bundle.orders, ...bundle.cash_sales].filter((item) => item.created_at.slice(0, 10) === today).reduce((sum, item) => sum + item.total, 0);
-  const salesMonth = [...bundle.orders, ...bundle.cash_sales].filter((item) => item.created_at.slice(0, 7) === month).reduce((sum, item) => sum + item.total, 0);
+  const salesToday = [...visibleOrders, ...bundle.cash_sales].filter((item) => item.created_at.slice(0, 10) === today).reduce((sum, item) => sum + item.total, 0);
+  const salesMonth = [...visibleOrders, ...bundle.cash_sales].filter((item) => item.created_at.slice(0, 7) === month).reduce((sum, item) => sum + item.total, 0);
   const total = all.reduce((sum, item) => sum + item.total, 0);
-  const pending = bundle.orders.filter((item) => !["concluido", "cancelado"].includes(item.status)).length;
+  const pending = visibleOrders.filter((item) => !["concluido", "cancelado"].includes(item.status)).length;
   const dayValues = Object.entries(sumByDay(all));
   const maxDay = Math.max(1, ...dayValues.map(([, value]) => value));
-  const recentOrders = [...bundle.orders].slice(0, 5);
+  const recentOrders = [...visibleOrders].slice(0, 5);
 
   function pdf() {
-    const byStatus = Object.entries(groupSum(bundle.orders.filter((item) => isInPeriod(item.created_at, start, end)), "status")).map(([status, count]) => `<li>${status}: ${count}</li>`).join("");
+    const byStatus = Object.entries(groupSum(visibleOrders.filter((item) => isInPeriod(item.created_at, start, end)), "status")).map(([status, count]) => `<li>${status}: ${count}</li>`).join("");
     openPrintable("Relatório Dashboard", `<h1>${company.name}</h1><p>Período: ${start} até ${end}</p><p>Total de vendas: ${money(total)}</p><p>Quantidade de pedidos: ${online.length}</p><p>Ticket médio: ${money(total / Math.max(1, all.length))}</p><h2>Pedidos por status</h2><ul>${byStatus}</ul><p class="signature">Startt Delivery — produzido por Startt Facilities</p>`);
   }
 
@@ -1397,24 +1514,27 @@ function OrdersManager({ bundle, setDbState, company, user, printThermalOrder }:
   const [status, setStatus] = useState("todos");
   const [search, setSearch] = useState("");
   const [date, setDate] = useState("");
-  const rows = bundle.orders.filter((order) => (status === "todos" || order.status === status) && (!date || order.created_at.slice(0, 10) === date) && (order.customer_name || customerName(order.customer_id, bundle.customers)).toLowerCase().includes(search.toLowerCase()));
+  const rows = activeOrders(bundle.orders).filter((order) => (status === "todos" || order.status === status) && (!date || order.created_at.slice(0, 10) === date) && (order.customer_name || customerName(order.customer_id, bundle.customers)).toLowerCase().includes(search.toLowerCase()));
   function update(order: Order, next: OrderStatus) {
     setDbState((current) => ({ ...current, orders: current.orders.map((item) => item.id === order.id && item.company_id === company.id ? { ...item, status: next } : item) }));
     notify("success", "Status do pedido atualizado.");
   }
-  function remove(order: Order) {
+  function archive(order: Order) {
     if (!["dono", "gerente"].includes(user.role)) {
-      notify("error", "Seu usuário não tem permissão para excluir pedidos.");
+      notify("error", "Seu usuário não tem permissão para arquivar pedidos.");
       return;
     }
-    if (!confirm(`Excluir pedido #${displayOrderNumber(order)}?`)) return;
-    setDbState((current) => ({ ...current, orders: current.orders.filter((item) => !(item.id === order.id && item.company_id === company.id)), order_items: current.order_items.filter((item) => !(item.order_id === order.id && item.company_id === company.id)) }));
-    notify("success", "Pedido excluído com sucesso.");
+    if (!confirm(`Arquivar pedido #${displayOrderNumber(order)} e remover do dashboard? O pedido continuará salvo no histórico interno.`)) return;
+    setDbState((current) => ({
+      ...current,
+      orders: current.orders.map((item) => item.id === order.id && item.company_id === company.id ? { ...item, archived: true, archived_at: new Date().toISOString(), removed_from_dashboard: true } : item),
+    }));
+    notify("success", "Pedido arquivado e removido do dashboard.");
   }
   return (
     <CrudShell title="Pedidos" description="Pedidos recebidos do cardápio online.">
       <div className="grid gap-3 md:grid-cols-3"><Input placeholder="Buscar cliente" value={search} onChange={setSearch} /><Input placeholder="" type="date" value={date} onChange={setDate} /><Select value={status} onChange={setStatus}><option value="todos">Todos</option>{orderStatuses.map((item) => <option key={item}>{item}</option>)}</Select></div>
-      <Table headers={["Pedido", "Cliente", "Pagamento", "Status", "Total", "Ações"]} rows={rows.map((order) => [`#${displayOrderNumber(order)}`, order.customer_name || customerName(order.customer_id, bundle.customers), order.payment_details || order.payment_method, order.status, money(order.total), <div className="flex flex-wrap gap-2" key={order.id}><Select value={order.status} onChange={(value) => update(order, value as OrderStatus)}>{orderStatuses.map((item) => <option key={item}>{item}</option>)}</Select><button className="rounded-lg border px-3 py-2 font-bold" onClick={() => printOrder(company, order, bundle)}>Ver pedido</button><button className="rounded-lg bg-startt-green px-3 py-2 font-bold text-white shadow-lg shadow-startt-green/20" onClick={() => printThermalOrder(order)}>Imprimir nota térmica</button><button className="rounded-lg border px-3 py-2 font-bold" onClick={() => sendOrderUpdate(order, company, bundle)}>Enviar WhatsApp</button>{["dono", "gerente"].includes(user.role) && <button className="rounded-lg bg-startt-red px-3 py-2 font-bold text-white" onClick={() => remove(order)}>Excluir</button>}</div>])} />
+      <Table headers={["Pedido", "Cliente", "Pagamento", "Status", "Total", "Ações"]} rows={rows.map((order) => [`#${displayOrderNumber(order)}`, order.customer_name || customerName(order.customer_id, bundle.customers), order.payment_details || order.payment_method, order.status, money(order.total), <div className="flex flex-wrap gap-2" key={order.id}><Select value={order.status} onChange={(value) => update(order, value as OrderStatus)}>{orderStatuses.map((item) => <option key={item}>{item}</option>)}</Select><button className="rounded-lg border px-3 py-2 font-bold" onClick={() => printOrder(company, order, bundle)}>Ver pedido</button><button className="rounded-lg bg-startt-green px-3 py-2 font-bold text-white shadow-lg shadow-startt-green/20" onClick={() => printThermalOrder(order)}>Imprimir nota térmica</button><button className="rounded-lg border px-3 py-2 font-bold" onClick={() => sendOrderUpdate(order, company, bundle)}>Enviar WhatsApp</button>{["dono", "gerente"].includes(user.role) && <button className="rounded-lg bg-startt-ink px-3 py-2 font-bold text-white" onClick={() => archive(order)}>Arquivar pedido</button>}</div>])} />
     </CrudShell>
   );
 }
@@ -1514,11 +1634,12 @@ function CustomersManager({ company, customers, orders, orderItems, setDbState }
   const [formOpen, setFormOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Customer | null>(null);
+  const visibleOrders = activeOrders(orders);
   const visible = customers.filter((customer) => `${customer.name} ${customer.phone} ${customer.address}`.toLowerCase().includes(search.toLowerCase()));
   function stats(customer: Customer) {
-    const history = orders.filter((order) => order.customer_id === customer.id || (order.normalized_phone && order.normalized_phone === customer.normalized_phone)).sort((a, b) => b.created_at.localeCompare(a.created_at));
-    const totalOrders = customer.total_orders || history.length;
-    const totalSpent = customer.total_spent || history.reduce((sum, order) => sum + order.total, 0);
+    const history = visibleOrders.filter((order) => order.customer_id === customer.id || (order.normalized_phone && order.normalized_phone === customer.normalized_phone)).sort((a, b) => b.created_at.localeCompare(a.created_at));
+    const totalOrders = history.length;
+    const totalSpent = history.reduce((sum, order) => sum + order.total, 0);
     return { history, totalOrders, totalSpent, average: totalSpent / Math.max(1, totalOrders), last: customer.last_order_at || history[0]?.created_at || "" };
   }
   function save(event: React.FormEvent) {
@@ -1642,7 +1763,7 @@ function Reports({ company, bundle }: { company: Company; bundle: ReturnType<Dat
   const [end, setEnd] = useState(todayInput());
   const [type, setType] = useState("todos");
   const [status, setStatus] = useState("todos");
-  const online = bundle.orders.filter((item) => isInPeriod(item.created_at, start, end) && (status === "todos" || item.status === status));
+  const online = activeOrders(bundle.orders).filter((item) => isInPeriod(item.created_at, start, end) && (status === "todos" || item.status === status));
   const cash = bundle.cash_sales.filter((item) => isInPeriod(item.created_at, start, end));
   const entries = type === "online" ? online.map((item) => ({ id: item.id, tipo: "Online", total: item.total, date: item.created_at, status: item.status })) : type === "caixa" ? cash.map((item) => ({ id: item.id, tipo: "Caixa", total: item.total, date: item.created_at, status: "concluido" })) : [...online.map((item) => ({ id: item.id, tipo: "Online", total: item.total, date: item.created_at, status: item.status })), ...cash.map((item) => ({ id: item.id, tipo: "Caixa", total: item.total, date: item.created_at, status: "concluido" }))];
   const total = entries.reduce((sum, item) => sum + item.total, 0);
@@ -1663,10 +1784,17 @@ function PrintManager({ company, settings, setDbState }: { company: Company; set
   return <CrudShell title="Impressão" description="Configure a impressão por navegador. O modo automático tenta abrir a janela da nota térmica ao receber novos pedidos."><div className="grid gap-3 rounded-lg border border-black/10 bg-white p-4 md:grid-cols-2"><label className="flex gap-2 font-bold"><input type="checkbox" checked={form.auto_print_orders} onChange={(e) => setForm({ ...form, auto_print_orders: e.target.checked, paper_width: "80mm" })} /> Imprimir pedidos automaticamente</label><label className="flex gap-2 font-bold"><input type="checkbox" checked={form.auto_print_cash_sales} onChange={(e) => setForm({ ...form, auto_print_cash_sales: e.target.checked })} /> Imprimir vendas do caixa</label><Input placeholder="Nome da impressora" value={form.printer_name} onChange={(value) => setForm({ ...form, printer_name: value })} /><Select value={form.paper_width} onChange={(value) => setForm({ ...form, paper_width: value as "58mm" | "80mm" })}><option>58mm</option><option>80mm</option></Select><Input placeholder="Quantidade de vias" value={String(form.copies)} onChange={(value) => setForm({ ...form, copies: Number(value) || 1 })} /><Input placeholder="Rodapé" value={form.footer_text} onChange={(value) => setForm({ ...form, footer_text: value })} /><button onClick={save} className="rounded-lg bg-startt-green px-4 py-3 font-black text-white">Salvar configuração</button><button onClick={() => openThermalPrintable("Teste térmico 80mm", `<main class="thermal-receipt"><section class="center"><strong class="store">${htmlEscape(company.name)}</strong><div>Teste de impressão 80mm</div></section><div class="sep"></div><div class="line"><span>Total</span><span>R$ 0,00</span></div><div class="sep"></div><section class="center"><div>Pedido gerado pelo Startt Delivery</div><div>Produto Startt Facilities</div></section></main>`)} className="rounded-lg border border-black/10 bg-white px-4 py-3 font-black">Testar nota térmica</button></div></CrudShell>;
 }
 
-function CompanySettings({ company, voucherBrands, printSettings, setDbState }: { company: Company; voucherBrands: VoucherBrand[]; printSettings?: PrintSettings; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
+function CompanySettings({ company, voucherBrands, settings, printSettings, setDbState }: { company: Company; voucherBrands: VoucherBrand[]; settings?: CompanySettingsRecord; printSettings?: PrintSettings; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
   const [form, setForm] = useState(company);
   const [saving, setSaving] = useState(false);
   const [voucherForm, setVoucherForm] = useState({ id: "", name: "", fee_percentage: "", active: true });
+  const [pixForm, setPixForm] = useState({
+    enabled: settings?.pix_enabled || false,
+    key: settings?.pix_key || "",
+    receiverName: settings?.pix_receiver_name || company.name,
+    city: settings?.pix_city || "Porto Alegre",
+    description: settings?.pix_description || "Pedido Startt Delivery",
+  });
   const [voucherOpen, setVoucherOpen] = useState(false);
   const [autoPrintOrders, setAutoPrintOrders] = useState(printSettings?.auto_print_orders || false);
   const defaultHour = company.opening_hours.match(/\d{1,2}:\d{2}[- às]+\d{1,2}:?\d{0,2}/)?.[0]?.replace(" às ", "-") || "18:00-23:00";
@@ -1685,6 +1813,30 @@ function CompanySettings({ company, voucherBrands, printSettings, setDbState }: 
     const fallback: PrintSettings = { company_id: company.id, auto_print_orders: value, auto_print_cash_sales: printSettings?.auto_print_cash_sales || false, printer_name: printSettings?.printer_name || "", paper_width: printSettings?.paper_width || "80mm", copies: printSettings?.copies || 1, footer_text: printSettings?.footer_text || "Startt Delivery — produzido por Startt Facilities" };
     setDbState((current) => ({ ...current, print_settings: current.print_settings.some((item) => item.company_id === company.id) ? current.print_settings.map((item) => item.company_id === company.id ? { ...item, auto_print_orders: value } : item) : [...current.print_settings, fallback] }));
     notify("success", value ? "Impressão automática ativada." : "Impressão automática desativada.");
+  }
+  function savePixSettings(event: React.FormEvent) {
+    event.preventDefault();
+    if (pixForm.enabled && (!pixForm.key.trim() || !pixForm.receiverName.trim() || !pixForm.city.trim())) {
+      notify("error", "Informe chave PIX, nome do recebedor e cidade para ativar PIX.");
+      return;
+    }
+    const record: CompanySettingsRecord = {
+      id: settings?.id || id("set"),
+      company_id: company.id,
+      critical_locked: settings?.critical_locked || false,
+      pix_enabled: pixForm.enabled,
+      pix_key: pixForm.key.trim(),
+      pix_receiver_name: pixForm.receiverName.trim(),
+      pix_city: pixForm.city.trim(),
+      pix_description: pixForm.description.trim(),
+    };
+    setDbState((current) => ({
+      ...current,
+      settings: current.settings.some((item) => item.company_id === company.id)
+        ? current.settings.map((item) => item.company_id === company.id ? { ...item, ...record } : item)
+        : [record, ...current.settings],
+    }));
+    notify("success", pixForm.enabled ? "PIX ativado no checkout público." : "PIX desativado no checkout público.");
   }
   function saveVoucher(event: React.FormEvent) {
     event.preventDefault();
@@ -1731,6 +1883,25 @@ function CompanySettings({ company, voucherBrands, printSettings, setDbState }: 
           </div>
           <span className="rounded-xl bg-startt-rose p-3 text-sm font-bold text-startt-green">{openingHoursSummary()}</span>
         </section>
+        <form onSubmit={savePixSettings} className="grid gap-4 rounded-2xl border border-startt-green/20 bg-gradient-to-br from-startt-green/10 to-white p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-black">Pagamento via PIX</h3>
+              <p className="text-sm text-startt-muted">Disponível para todos os planos. Quando ativo, o checkout gera QR Code dinâmico, copia e cola e TXID único por pedido.</p>
+            </div>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setPixForm({ ...pixForm, enabled: true })} className={`min-h-11 rounded-xl px-4 font-black ${pixForm.enabled ? "bg-startt-green text-white shadow-lg shadow-startt-green/20" : "border border-black/10 bg-white"}`}>Ativado</button>
+              <button type="button" onClick={() => setPixForm({ ...pixForm, enabled: false })} className={`min-h-11 rounded-xl px-4 font-black ${!pixForm.enabled ? "bg-startt-ink text-white" : "border border-black/10 bg-white"}`}>Desativado</button>
+            </div>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Input placeholder="Chave PIX" value={pixForm.key} onChange={(key) => setPixForm({ ...pixForm, key })} />
+            <Input placeholder="Nome do recebedor" value={pixForm.receiverName} onChange={(receiverName) => setPixForm({ ...pixForm, receiverName })} />
+            <Input placeholder="Cidade" value={pixForm.city} onChange={(city) => setPixForm({ ...pixForm, city })} />
+            <Input placeholder="Descrição opcional" value={pixForm.description} onChange={(description) => setPixForm({ ...pixForm, description })} />
+          </div>
+          <button className="w-fit rounded-xl bg-startt-green px-4 py-3 font-black text-white shadow-lg shadow-startt-green/20">Salvar PIX</button>
+        </form>
         <section className="grid gap-3 rounded-2xl border border-black/10 bg-white p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -1882,7 +2053,7 @@ function MasterCompanies({ db, setDbState }: { db: DatabaseApi; setDbState: Reac
     const companyId = form.id || id("cmp");
     const previous = db.companies.find((item) => item.id === form.id);
     const company: Company = { id: companyId, name: form.name, slug: form.slug, logo_url: previous?.logo_url || "", banner_url: previous?.banner_url || previous?.hero_image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1600&q=80", whatsapp: form.whatsapp, address: form.address, hero_image: previous?.hero_image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1600&q=80", primary_color: form.primary_color, minimum_order: previous?.minimum_order || 25, estimated_delivery_time: previous?.estimated_delivery_time || "35-45 min", is_open: previous?.is_open ?? true, delivery_enabled: previous?.delivery_enabled ?? true, pickup_enabled: previous?.pickup_enabled ?? true, status: form.status, plan: plan?.name || "Start", is_registration_enabled: form.is_registration_enabled, plan_id: form.plan_id, subscription_status: form.subscription_status, monthly_price: parseMoney(form.monthly_price), due_day: Number(form.due_day), next_due_date: form.next_due_date, last_payment_date: previous?.last_payment_date || "", payment_notes: form.payment_notes, footer_message: previous?.footer_message || "produzido por Startt Facilities", opening_hours: previous?.opening_hours || "Aberto hoje", created_at: previous?.created_at || created };
-    setDbState((current) => ({ ...current, companies: form.id ? current.companies.map((item) => item.id === form.id ? company : item) : [company, ...current.companies], settings: form.id ? current.settings : [{ id: id("set"), company_id: companyId, critical_locked: false }, ...current.settings], print_settings: form.id ? current.print_settings : [{ company_id: companyId, auto_print_orders: false, auto_print_cash_sales: false, printer_name: "", paper_width: "80mm", copies: 1, footer_text: "Startt Delivery — produzido por Startt Facilities" }, ...current.print_settings], users: !form.id && form.admin_email ? [{ id: id("usr"), company_id: companyId, name: "Admin inicial", email: form.admin_email, password: form.admin_password, role: "dono", is_active: true, created_at: created }, ...current.users] : current.users }));
+    setDbState((current) => ({ ...current, companies: form.id ? current.companies.map((item) => item.id === form.id ? company : item) : [company, ...current.companies], settings: form.id ? current.settings : [{ id: id("set"), company_id: companyId, critical_locked: false, pix_enabled: false, pix_key: "", pix_receiver_name: company.name, pix_city: "Porto Alegre", pix_description: "Pedido Startt Delivery" }, ...current.settings], print_settings: form.id ? current.print_settings : [{ company_id: companyId, auto_print_orders: false, auto_print_cash_sales: false, printer_name: "", paper_width: "80mm", copies: 1, footer_text: "Startt Delivery — produzido por Startt Facilities" }, ...current.print_settings], users: !form.id && form.admin_email ? [{ id: id("usr"), company_id: companyId, name: "Admin inicial", email: form.admin_email, password: form.admin_password, role: "dono", is_active: true, created_at: created }, ...current.users] : current.users }));
     setFormOpen(false);
     notify("success", form.id ? "Empresa atualizada com sucesso." : "Empresa criada com sucesso.");
   }
