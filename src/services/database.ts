@@ -38,6 +38,7 @@ const tableNames = [
   "order_items",
   "cash_sales",
   "reports",
+  "inventory_items",
 ] as const;
 
 const defaultMasterUser = {
@@ -217,6 +218,20 @@ async function selectAll<T>(table: TableName): Promise<T[]> {
   return (data || []) as T[];
 }
 
+function isMissingOptionalInventoryTable(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  return /inventory_items|schema cache|does not exist|Could not find/i.test(message);
+}
+
+async function selectOptionalAll<T>(table: TableName): Promise<T[]> {
+  try {
+    return await selectAll<T>(table);
+  } catch (error) {
+    if (table === "inventory_items" && isMissingOptionalInventoryTable(error)) return [];
+    throw error;
+  }
+}
+
 async function insertRow<T>(table: TableName, row: T): Promise<T> {
   if (!isSupabaseConfigured) return row;
   const client = requireSupabase();
@@ -254,6 +269,7 @@ async function syncTable(table: TableName, rows: unknown[], key: "id" | "company
       if (retryError) throw retryError;
       return;
     }
+    if (error && table === "inventory_items" && isMissingOptionalInventoryTable(error)) return;
     if (error) throw error;
   }
 }
@@ -306,6 +322,7 @@ export async function loadDatabaseSnapshot(): Promise<MockDatabaseState> {
       cash_sales,
       print_settings,
       reports,
+      inventory_items,
     ] = await Promise.all([
       selectAll<MockDatabaseState["companies"][number]>("companies"),
       selectAll<MockDatabaseState["plans"][number]>("plans"),
@@ -323,6 +340,7 @@ export async function loadDatabaseSnapshot(): Promise<MockDatabaseState> {
       selectAll<MockDatabaseState["cash_sales"][number]>("cash_sales"),
       selectAll<MockDatabaseState["print_settings"][number]>("print_settings"),
       selectAll<MockDatabaseState["reports"][number]>("reports"),
+      selectOptionalAll<MockDatabaseState["inventory_items"][number]>("inventory_items"),
     ]);
 
     return withDefaults({
@@ -342,6 +360,7 @@ export async function loadDatabaseSnapshot(): Promise<MockDatabaseState> {
       cash_sales,
       print_settings,
       reports,
+      inventory_items,
     });
   } catch (error) {
     console.error("Falha ao carregar Supabase.", error);
@@ -362,7 +381,7 @@ export async function loadCompanyRouteSnapshot(slug: string, includeAdminData = 
       p_slug: slug,
       p_include_admin: includeAdminData,
     });
-    if (!routeBundleError && routeBundle && typeof routeBundle === "object") {
+    if (!routeBundleError && routeBundle && typeof routeBundle === "object" && (!includeAdminData || "inventory_items" in (routeBundle as Record<string, unknown>))) {
       const bundle = routeBundle as Partial<MockDatabaseState> & { company?: Company | null };
       return withDefaults({
         companies: bundle.company ? [bundle.company] : [],
@@ -381,6 +400,7 @@ export async function loadCompanyRouteSnapshot(slug: string, includeAdminData = 
         cash_sales: bundle.cash_sales || [],
         print_settings: bundle.print_settings || [],
         reports: bundle.reports || [],
+        inventory_items: bundle.inventory_items || [],
       });
     }
 
@@ -408,6 +428,7 @@ export async function loadCompanyRouteSnapshot(slug: string, includeAdminData = 
         cash_sales: [],
         print_settings: [],
         reports: [],
+        inventory_items: [],
       });
     }
 
@@ -430,12 +451,13 @@ export async function loadCompanyRouteSnapshot(slug: string, includeAdminData = 
           client.from("order_items").select("*").eq("company_id", companyId),
           client.from("cash_sales").select("*").eq("company_id", companyId),
           client.from("reports").select("*").eq("company_id", companyId),
+          client.from("inventory_items").select("*").eq("company_id", companyId).order("updated_at", { ascending: false }),
         ])
       : [];
-    const [users, order_items, cash_sales, reports] = adminResponses;
+    const [users, order_items, cash_sales, reports, inventory_items] = adminResponses;
 
     const responses = [categories, products, orders, customers, voucher_brands, delivery_zones, coupons, settings, print_settings, ...adminResponses];
-    const failed = responses.find((response) => response.error);
+    const failed = responses.find((response) => response.error && !(response === inventory_items && isMissingOptionalInventoryTable(response.error)));
     if (failed?.error) throw failed.error;
 
     return withDefaults({
@@ -455,6 +477,7 @@ export async function loadCompanyRouteSnapshot(slug: string, includeAdminData = 
       cash_sales: (cash_sales?.data || []) as MockDatabaseState["cash_sales"],
       print_settings: (print_settings.data || []) as MockDatabaseState["print_settings"],
       reports: (reports?.data || []) as MockDatabaseState["reports"],
+      inventory_items: (inventory_items && !inventory_items.error ? inventory_items.data || [] : []) as MockDatabaseState["inventory_items"],
     });
   } catch (error) {
     console.error("Falha ao carregar lancheria no Supabase.", error);
@@ -635,13 +658,15 @@ export async function deleteCompanyCascade(companyId: string) {
       cash_sales: state.cash_sales.filter((item) => item.company_id !== companyId),
       print_settings: state.print_settings.filter((item) => item.company_id !== companyId),
       reports: state.reports.filter((item) => item.company_id !== companyId),
+      inventory_items: state.inventory_items.filter((item) => item.company_id !== companyId),
     }));
     return;
   }
 
   const client = requireSupabase();
-  for (const table of ["reports", "print_settings", "cash_sales", "settings", "coupons", "delivery_zones", "customers", "order_items", "orders", "products", "categories", "users"] as TableName[]) {
+  for (const table of ["inventory_items", "reports", "print_settings", "cash_sales", "settings", "coupons", "delivery_zones", "customers", "order_items", "orders", "products", "categories", "users"] as TableName[]) {
     const { error } = await client.from(table).delete().eq("company_id", companyId);
+    if (table === "inventory_items" && isMissingOptionalInventoryTable(error)) continue;
     if (error) throw error;
   }
   await deleteById("companies", companyId);

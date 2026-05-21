@@ -50,6 +50,8 @@ import {
   Customer,
   DeliveryZone,
   Fulfillment,
+  InventoryItem,
+  InventoryUnit,
   MockDatabaseState,
   Order,
   OrderItem,
@@ -101,6 +103,7 @@ type AdminScreen =
   | "dashboard"
   | "conta"
   | "caixa"
+  | "estoque"
   | "pedidos"
   | "clientes"
   | "produtos"
@@ -130,6 +133,7 @@ const adminNav: Array<{ id: AdminScreen; label: string; icon: React.ReactNode }>
   { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={18} /> },
   { id: "conta", label: "Minha conta", icon: <UserRound size={18} /> },
   { id: "caixa", label: "Caixa", icon: <CreditCard size={18} /> },
+  { id: "estoque", label: "Estoque", icon: <Utensils size={18} /> },
   { id: "pedidos", label: "Pedidos", icon: <ClipboardList size={18} /> },
   { id: "clientes", label: "Clientes", icon: <UsersRound size={18} /> },
   { id: "produtos", label: "Produtos", icon: <Package size={18} /> },
@@ -147,7 +151,7 @@ const weekDays = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "
 const roleAccess: Record<UserRole, AdminScreen[]> = {
   dono: adminNav.map((item) => item.id),
   gerente: adminNav.map((item) => item.id).filter((id) => !["usuarios", "configuracoes"].includes(id)),
-  caixa: ["dashboard", "caixa", "pedidos"],
+  caixa: ["dashboard", "caixa", "estoque", "pedidos"],
   atendente: ["dashboard", "pedidos", "clientes"],
 };
 
@@ -1471,6 +1475,7 @@ function AdminContent({ screen, db, setDbState, company, user, printThermalOrder
   if (screen === "conta") return <AccountSettings company={company} user={user} setDbState={setDbState} />;
   if (screen === "dashboard") return <Dashboard company={company} bundle={bundle} />;
   if (screen === "caixa") return <Cashier company={company} user={user} products={bundle.products.filter((item) => item.active)} setDbState={setDbState} />;
+  if (screen === "estoque") return <InventoryManager company={company} items={bundle.inventory_items} setDbState={setDbState} />;
   if (screen === "pedidos") return <OrdersManager bundle={bundle} setDbState={setDbState} company={company} user={user} printThermalOrder={printThermalOrder} />;
   if (screen === "clientes") return <CustomersManager company={company} customers={bundle.customers} orders={bundle.orders} orderItems={bundle.order_items} setDbState={setDbState} />;
   if (screen === "produtos") return <ProductsManager company={company} products={bundle.products} categories={bundle.categories} plan={plan} setDbState={setDbState} />;
@@ -1542,6 +1547,11 @@ function Dashboard({ company, bundle }: { company: Company; bundle: ReturnType<D
   const [start, setStart] = useState(todayInput());
   const [end, setEnd] = useState(todayInput());
   const visibleOrders = activeOrders(bundle.orders);
+  const activeInventory = bundle.inventory_items.filter((item) => item.active);
+  const inventoryZero = activeInventory.filter((item) => item.current_quantity <= 0).length;
+  const inventoryLow = activeInventory.filter((item) => item.current_quantity > 0 && item.current_quantity <= item.minimum_quantity).length;
+  const inventoryShopping = activeInventory.filter((item) => !item.purchase_resolved && (item.purchase_flag || item.current_quantity <= item.minimum_quantity)).length;
+  const inventoryOk = activeInventory.filter((item) => item.current_quantity > item.minimum_quantity && !item.purchase_flag).length;
   const online = visibleOrders.filter((item) => isInPeriod(item.created_at, start, end));
   const cash = bundle.cash_sales.filter((item) => isInPeriod(item.created_at, start, end));
   const all = [...online.map((item) => ({ date: item.created_at, total: item.total })), ...cash.map((item) => ({ date: item.created_at, total: item.total }))];
@@ -1575,10 +1585,16 @@ function Dashboard({ company, bundle }: { company: Company; bundle: ReturnType<D
         <Metric label="Presenciais (mês)" value={String(cash.length)} icon={<CreditCard />} />
         <Metric label="Clientes" value={String(bundle.customers.length)} icon={<UsersRound />} />
         <Metric label="Pendentes" value={String(pending)} icon={<Bike />} />
+        <Metric label="Estoque OK" value={String(inventoryOk)} icon={<Check />} />
+        <Metric label="Estoque baixo" value={String(inventoryLow)} icon={<Bell />} />
+        <Metric label="Zerados" value={String(inventoryZero)} icon={<Trash2 />} />
+        <Metric label="Comprar" value={String(inventoryShopping)} icon={<ShoppingBag />} />
       </div>
+      {inventoryShopping > 0 && <div className="rounded-2xl border border-startt-green/20 bg-startt-green/10 p-4 text-sm font-bold text-startt-ink">{inventoryShopping} {inventoryShopping === 1 ? "item precisa" : "itens precisam"} de atenção na cozinha.</div>}
       <Panel title="Atalhos rápidos">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <QuickLink href={`/${company.slug}/admin/caixa`} title="Caixa presencial" text="Registrar pedido balcão" icon={<CreditCard size={20} />} />
+          <QuickLink href={`/${company.slug}/admin/estoque`} title="Estoque" text="Controle leve da cozinha" icon={<Utensils size={20} />} />
           <QuickLink href={`/${company.slug}/admin/pedidos`} title="Ver pedidos" text="Acompanhe os pedidos" icon={<ClipboardList size={20} />} />
           <QuickLink href={`/${company.slug}/admin/clientes`} title="Clientes" text="Cadastro e fidelidade" icon={<UsersRound size={20} />} />
           <QuickLink href={`/${company.slug}/admin/produtos`} title="Novo produto" text="Adicionar ao cardápio" icon={<Package size={20} />} />
@@ -1638,6 +1654,173 @@ function Cashier({ company, user, products, setDbState }: { company: Company; us
         <button onClick={finish} className="w-full rounded-lg bg-startt-green px-4 py-3 font-black text-white">Finalizar venda</button>
       </Panel>
     </section>
+  );
+}
+
+const inventoryUnits: InventoryUnit[] = ["un", "kg", "g", "litro", "ml", "pacote", "caixa"];
+
+function inventoryStatus(item: InventoryItem) {
+  if (!item.active) return { label: "Inativo", tone: "bg-black/5 text-startt-muted", dot: "⚪" };
+  if (item.current_quantity <= 0 || (item.purchase_flag && !item.purchase_resolved)) return { label: "Comprar urgente", tone: "bg-red-50 text-red-700", dot: "🔴" };
+  if (item.current_quantity <= item.minimum_quantity) return { label: "Baixo", tone: "bg-amber-50 text-amber-700", dot: "🟡" };
+  return { label: "OK", tone: "bg-emerald-50 text-emerald-700", dot: "🟢" };
+}
+
+function InventoryManager({ company, items, setDbState }: { company: Company; items: InventoryItem[]; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
+  const emptyForm = { id: "", name: "", category: "", current_quantity: "0", minimum_quantity: "0", unit: "un" as InventoryUnit, notes: "", active: true };
+  const [formOpen, setFormOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState(emptyForm);
+  const activeItems = items.filter((item) => item.active);
+  const shoppingItems = activeItems.filter((item) => !item.purchase_resolved && (item.purchase_flag || item.current_quantity <= item.minimum_quantity));
+  const okCount = activeItems.filter((item) => item.current_quantity > item.minimum_quantity && !item.purchase_flag).length;
+  const lowCount = activeItems.filter((item) => item.current_quantity > 0 && item.current_quantity <= item.minimum_quantity).length;
+  const zeroCount = activeItems.filter((item) => item.current_quantity <= 0).length;
+
+  function openCreate() {
+    setForm(emptyForm);
+    setFormOpen(true);
+  }
+
+  function openEdit(item: InventoryItem) {
+    setForm({ id: item.id, name: item.name, category: item.category, current_quantity: String(item.current_quantity), minimum_quantity: String(item.minimum_quantity), unit: item.unit, notes: item.notes, active: item.active });
+    setFormOpen(true);
+  }
+
+  function save(event: React.FormEvent) {
+    event.preventDefault();
+    if (!form.name.trim()) {
+      notify("error", "Informe o nome do item.");
+      return;
+    }
+    const now = new Date().toISOString();
+    const currentQuantity = Number(form.current_quantity.replace(",", ".")) || 0;
+    const minimumQuantity = Number(form.minimum_quantity.replace(",", ".")) || 0;
+    runSave(setSaving, () => {
+      setDbState((current) => {
+        const previous = form.id ? current.inventory_items.find((item) => item.id === form.id) : undefined;
+        const nextItem: InventoryItem = {
+          id: form.id || id("inv"),
+          company_id: company.id,
+          name: form.name.trim(),
+          category: form.category.trim(),
+          current_quantity: currentQuantity,
+          minimum_quantity: minimumQuantity,
+          unit: form.unit,
+          notes: form.notes.trim(),
+          active: form.active,
+          purchase_flag: previous?.purchase_flag || currentQuantity <= minimumQuantity,
+          purchase_resolved: false,
+          created_at: previous?.created_at || now,
+          updated_at: now,
+        };
+        return { ...current, inventory_items: form.id ? current.inventory_items.map((item) => item.id === form.id ? nextItem : item) : [nextItem, ...current.inventory_items] };
+      });
+      setFormOpen(false);
+    }, form.id ? "Item de estoque atualizado." : "Item de estoque cadastrado.");
+  }
+
+  function updateItem(itemId: string, updater: (item: InventoryItem) => InventoryItem) {
+    setDbState((current) => ({ ...current, inventory_items: current.inventory_items.map((item) => item.id === itemId && item.company_id === company.id ? { ...updater(item), updated_at: new Date().toISOString() } : item) }));
+  }
+
+  function adjust(item: InventoryItem, delta: number) {
+    updateItem(item.id, (current) => ({ ...current, current_quantity: Math.max(0, Number((current.current_quantity + delta).toFixed(3))), purchase_resolved: false }));
+  }
+
+  function markToBuy(item: InventoryItem) {
+    updateItem(item.id, (current) => ({ ...current, purchase_flag: true, purchase_resolved: false }));
+  }
+
+  function markResolved(item: InventoryItem) {
+    updateItem(item.id, (current) => ({ ...current, purchase_flag: false, purchase_resolved: true }));
+  }
+
+  function clearResolved() {
+    setDbState((current) => ({ ...current, inventory_items: current.inventory_items.map((item) => item.company_id === company.id && item.purchase_resolved ? { ...item, purchase_resolved: false, updated_at: new Date().toISOString() } : item) }));
+    notify("success", "Resolvidos limpos da lista.");
+  }
+
+  async function copyShoppingList() {
+    if (!shoppingItems.length) {
+      notify("info", "Nenhum item precisa entrar na lista de compras.");
+      return;
+    }
+    const text = [`Lista de compras - ${company.name}`, ...shoppingItems.map((item) => `- ${item.name}: atual ${item.current_quantity} ${item.unit} / minimo ${item.minimum_quantity} ${item.unit}${item.notes ? ` (${item.notes})` : ""}`)].join("\n");
+    await navigator.clipboard.writeText(text);
+    notify("success", "Lista copiada. Cole no WhatsApp da equipe.");
+    const phone = company.whatsapp.replace(/\D/g, "");
+    if (phone) window.open(`https://wa.me/55${phone.replace(/^55/, "")}?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
+  }
+
+  return (
+    <CrudShell title="Estoque" description="Controle leve da cozinha para saber o que tem, o que está baixo e o que precisa comprar.">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric label="Itens OK" value={String(okCount)} icon={<Check />} />
+        <Metric label="Baixos" value={String(lowCount)} icon={<Bell />} />
+        <Metric label="Zerados" value={String(zeroCount)} icon={<Trash2 />} />
+        <Metric label="Lista de compras" value={String(shoppingItems.length)} icon={<ShoppingBag />} />
+      </div>
+      <div className="grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
+        <Panel title="Itens da cozinha">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <HelpText>Use +1 e -1 para ajustes rápidos durante a operação. Para kg, litro ou ml, edite a quantidade manualmente.</HelpText>
+            <button onClick={openCreate} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-startt-green px-4 font-black text-white shadow-lg shadow-startt-green/20"><Plus size={18} /> Novo item</button>
+          </div>
+          <div className="grid gap-3">
+            {items.map((item) => {
+              const status = inventoryStatus(item);
+              return (
+                <article key={item.id} className="grid gap-4 rounded-2xl border border-black/10 bg-white p-4 shadow-sm md:grid-cols-[1fr_auto]">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="truncate text-base font-black">{item.name}</h3>
+                      <span className={`rounded-full px-3 py-1 text-xs font-black ${status.tone}`}>{status.dot} {status.label}</span>
+                      {!item.active && <span className="rounded-full bg-black/5 px-3 py-1 text-xs font-black text-startt-muted">oculto</span>}
+                    </div>
+                    <p className="mt-1 text-sm text-startt-muted">{item.category || "Sem categoria"} • minimo {item.minimum_quantity} {item.unit}</p>
+                    {item.notes && <p className="mt-2 text-sm leading-5 text-startt-muted">{item.notes}</p>}
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <button onClick={() => adjust(item, -1)} className="grid h-11 w-11 place-items-center rounded-xl border border-black/10 bg-startt-paper font-black"><Minus size={18} /></button>
+                      <strong className="min-w-28 rounded-xl bg-startt-ink px-4 py-3 text-center text-white">{item.current_quantity} {item.unit}</strong>
+                      <button onClick={() => adjust(item, 1)} className="grid h-11 w-11 place-items-center rounded-xl border border-black/10 bg-startt-paper font-black"><Plus size={18} /></button>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                    <button onClick={() => openEdit(item)} className="min-h-11 rounded-xl border border-black/10 px-3 font-bold">Editar</button>
+                    <button onClick={() => markToBuy(item)} className="min-h-11 rounded-xl bg-amber-500 px-3 font-black text-white">Marcar comprar</button>
+                    <button onClick={() => markResolved(item)} className="min-h-11 rounded-xl bg-startt-green px-3 font-black text-white">Resolvido</button>
+                  </div>
+                </article>
+              );
+            })}
+            {!items.length && <Empty text="Cadastre os primeiros itens críticos da cozinha." />}
+          </div>
+        </Panel>
+        <Panel title="Lista de compras">
+          <div className="grid gap-3">
+            {shoppingItems.map((item) => <div key={item.id} className="rounded-2xl border border-black/10 bg-startt-paper p-4"><div className="flex items-start justify-between gap-3"><div><strong>{item.name}</strong><p className="text-sm text-startt-muted">Atual: {item.current_quantity} {item.unit} • minimo: {item.minimum_quantity} {item.unit}</p></div><button onClick={() => markResolved(item)} className="rounded-xl bg-white px-3 py-2 text-xs font-black">Resolvido</button></div></div>)}
+            {!shoppingItems.length && <Empty text="Nada urgente para comprar agora." />}
+            <button onClick={copyShoppingList} className="min-h-12 rounded-xl bg-startt-ink px-4 font-black text-white">Copiar lista para WhatsApp</button>
+            <button onClick={clearResolved} className="min-h-12 rounded-xl border border-black/10 px-4 font-black">Limpar resolvidos</button>
+          </div>
+        </Panel>
+      </div>
+      <FormDrawer open={formOpen} title={form.id ? "Editar item" : "Novo item"} description="Cadastre só o essencial para a equipe agir rápido no celular." onClose={() => setFormOpen(false)}>
+        <form onSubmit={save} className="grid gap-3">
+          <Input placeholder="Nome do item" value={form.name} onChange={(name) => setForm({ ...form, name })} />
+          <Input placeholder="Categoria opcional" value={form.category} onChange={(category) => setForm({ ...form, category })} />
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Input type="number" placeholder="Quantidade atual" value={form.current_quantity} onChange={(current_quantity) => setForm({ ...form, current_quantity })} />
+            <Input type="number" placeholder="Quantidade mínima" value={form.minimum_quantity} onChange={(minimum_quantity) => setForm({ ...form, minimum_quantity })} />
+            <Select value={form.unit} onChange={(unit) => setForm({ ...form, unit: unit as InventoryUnit })}>{inventoryUnits.map((unit) => <option key={unit} value={unit}>{unit}</option>)}</Select>
+          </div>
+          <Input placeholder="Observação opcional" value={form.notes} onChange={(notes) => setForm({ ...form, notes })} />
+          <label className="flex items-center gap-2 rounded-xl bg-startt-paper p-3 text-sm font-bold"><input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} /> Item ativo no controle da cozinha</label>
+          <button disabled={saving} className="min-h-12 rounded-xl bg-startt-green px-4 font-black text-white disabled:opacity-60">{saving ? "Salvando..." : "Salvar item"}</button>
+        </form>
+      </FormDrawer>
+    </CrudShell>
   );
 }
 
@@ -2193,7 +2376,7 @@ function MasterCompanies({ db, setDbState }: { db: DatabaseApi; setDbState: Reac
     notify("success", form.id ? "Empresa atualizada com sucesso." : "Empresa criada com sucesso.");
   }
   function updateCompany(companyId: string, patch: Partial<Company>) { setDbState((current) => ({ ...current, companies: current.companies.map((company) => company.id === companyId ? { ...company, ...patch } : company) })); notify("success", "Empresa atualizada."); }
-  function deleteCompany(company: Company) { if (!confirm(`Excluir ${company.name} e TODOS os dados vinculados?`)) return; setDbState((current) => ({ ...current, companies: current.companies.filter((item) => item.id !== company.id), users: current.users.filter((item) => item.company_id !== company.id), categories: current.categories.filter((item) => item.company_id !== company.id), products: current.products.filter((item) => item.company_id !== company.id), orders: current.orders.filter((item) => item.company_id !== company.id), order_items: current.order_items.filter((item) => item.company_id !== company.id), customers: current.customers.filter((item) => item.company_id !== company.id), voucher_brands: current.voucher_brands.filter((item) => item.company_id !== company.id), delivery_zones: current.delivery_zones.filter((item) => item.company_id !== company.id), coupons: current.coupons.filter((item) => item.company_id !== company.id), settings: current.settings.filter((item) => item.company_id !== company.id), cash_sales: current.cash_sales.filter((item) => item.company_id !== company.id), print_settings: current.print_settings.filter((item) => item.company_id !== company.id), reports: current.reports.filter((item) => item.company_id !== company.id) })); notify("success", "Empresa e dados vinculados foram excluídos."); }
+  function deleteCompany(company: Company) { if (!confirm(`Excluir ${company.name} e TODOS os dados vinculados?`)) return; setDbState((current) => ({ ...current, companies: current.companies.filter((item) => item.id !== company.id), users: current.users.filter((item) => item.company_id !== company.id), categories: current.categories.filter((item) => item.company_id !== company.id), products: current.products.filter((item) => item.company_id !== company.id), orders: current.orders.filter((item) => item.company_id !== company.id), order_items: current.order_items.filter((item) => item.company_id !== company.id), customers: current.customers.filter((item) => item.company_id !== company.id), voucher_brands: current.voucher_brands.filter((item) => item.company_id !== company.id), delivery_zones: current.delivery_zones.filter((item) => item.company_id !== company.id), coupons: current.coupons.filter((item) => item.company_id !== company.id), settings: current.settings.filter((item) => item.company_id !== company.id), cash_sales: current.cash_sales.filter((item) => item.company_id !== company.id), print_settings: current.print_settings.filter((item) => item.company_id !== company.id), reports: current.reports.filter((item) => item.company_id !== company.id), inventory_items: current.inventory_items.filter((item) => item.company_id !== company.id) })); notify("success", "Empresa e dados vinculados foram excluídos."); }
   return <CrudShell title="Empresas" description="CRUD completo, controle de acesso e financeiro por empresa. Use o slug para definir o link público e o plano para liberar recursos."><div className="flex flex-wrap justify-end gap-2"><button onClick={startCreate} className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-startt-green px-4 font-black text-white shadow-lg shadow-startt-green/20"><Plus size={18} /> Nova empresa</button></div><FormDrawer open={formOpen} title={form.id ? "Editar empresa" : "Nova empresa"} description="Controle dados comerciais, plano, assinatura e usuário inicial da lancheria." onClose={() => setFormOpen(false)}><form onSubmit={saveCompany} className="grid gap-3"><div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1"><Input placeholder="Nome" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><HelpText>Nome que aparece no cardápio e no painel da loja.</HelpText></label><label className="grid gap-1"><Input placeholder="Slug" value={form.slug} onChange={(value) => setForm({ ...form, slug: value })} /><HelpText>Link público. Ex: starttdelivery.com.br/nomedaloja</HelpText></label><label className="grid gap-1"><Input placeholder="WhatsApp" value={form.whatsapp} onChange={(value) => setForm({ ...form, whatsapp: value })} /><HelpText>Número que recebe pedidos e contatos.</HelpText></label><label className="grid gap-1"><Input placeholder="Endereço" value={form.address} onChange={(value) => setForm({ ...form, address: value })} /><HelpText>Endereço exibido no cardápio público.</HelpText></label><label className="grid gap-1"><Select value={form.status} onChange={(value) => setForm({ ...form, status: value as CompanyStatus })}><option>trial</option><option>active</option><option>blocked</option><option>canceled</option></Select><HelpText>Bloqueado impede acesso e cancelado suspende a loja.</HelpText></label><label className="grid gap-1"><Select value={form.plan_id} onChange={(value) => { const plan = selectedPlan(value); setForm({ ...form, plan_id: value, monthly_price: String(plan?.monthly_price || form.monthly_price) }); }}>{db.plans.filter((plan) => plan.is_active || plan.id === form.plan_id).map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</Select><HelpText>Plano define limites de produtos, usuários, cupons, relatórios e impressão.</HelpText></label><label className="grid gap-1"><Input placeholder="Cor principal" value={form.primary_color} onChange={(value) => setForm({ ...form, primary_color: value })} /><HelpText>Cor da identidade da lancheria no cardápio.</HelpText></label><label className="grid gap-1"><Input placeholder="Valor mensal" value={form.monthly_price} onChange={(value) => setForm({ ...form, monthly_price: value })} /><HelpText>Mensalidade usada no controle financeiro do SaaS.</HelpText></label><label className="grid gap-1"><Input placeholder="Dia vencimento" value={form.due_day} onChange={(value) => setForm({ ...form, due_day: value })} /><HelpText>Dia do mês para acompanhar cobranças.</HelpText></label><label className="grid gap-1"><Input type="date" placeholder="Próxima data" value={form.next_due_date} onChange={(value) => setForm({ ...form, next_due_date: value })} /><HelpText>Próximo vencimento da assinatura.</HelpText></label><label className="grid gap-1"><Select value={form.subscription_status} onChange={(value) => setForm({ ...form, subscription_status: value as SubscriptionStatus })}><option>trialing</option><option>active</option><option>overdue</option><option>canceled</option></Select><HelpText>Status financeiro usado no painel master.</HelpText></label><label className="grid gap-1"><Input placeholder="Admin inicial opcional" value={form.admin_email} onChange={(value) => setForm({ ...form, admin_email: value })} /><HelpText>E-mail do primeiro acesso da lancheria.</HelpText></label><label className="grid gap-1"><Input placeholder="Senha inicial do admin" type="password" value={form.admin_password} onChange={(value) => setForm({ ...form, admin_password: value })} /><HelpText>Senha temporária para o primeiro login.</HelpText></label></div><label className="grid gap-1"><Input placeholder="Observações financeiras" value={form.payment_notes} onChange={(value) => setForm({ ...form, payment_notes: value })} /><HelpText>Anotações internas sobre pagamento, negociação ou bloqueio.</HelpText></label><label className="flex items-center gap-2 rounded-2xl bg-startt-paper p-4 font-bold"><input type="checkbox" checked={form.is_registration_enabled} onChange={(event) => setForm({ ...form, is_registration_enabled: event.target.checked })} /> Cadastro/acesso habilitado</label><button className="min-h-12 rounded-xl bg-startt-green px-4 font-black text-white shadow-lg shadow-startt-green/20">{form.id ? "Salvar alterações" : "Criar empresa"}</button></form></FormDrawer><FormDrawer open={accessOpen} title="Gerenciar acesso" description="Edite o login e resete a senha da lancheria sem perder o vínculo com a empresa." onClose={() => setAccessOpen(false)}><form onSubmit={saveAccess} className="grid gap-4"><Input placeholder="Nome do usuário" value={accessForm.name} onChange={(value) => setAccessForm({ ...accessForm, name: value })} /><Input placeholder="Login/e-mail" value={accessForm.email} onChange={(value) => setAccessForm({ ...accessForm, email: value })} /><HelpText>Este login só acessa a empresa vinculada a ele.</HelpText><Select value={accessForm.role} onChange={(value) => setAccessForm({ ...accessForm, role: value as UserRole })}>{(["dono", "gerente", "caixa", "atendente"] as UserRole[]).map((role) => <option key={role}>{role}</option>)}</Select><div className="grid gap-2"><label className="text-sm font-bold">Nova senha</label><div className="flex min-h-12 overflow-hidden rounded-xl border border-startt-border bg-white shadow-sm focus-within:border-startt-green focus-within:shadow-input"><input className="min-w-0 flex-1 px-3 text-sm outline-none" type={showAccessPassword ? "text" : "password"} placeholder="Deixe vazio para manter" value={accessForm.password} onChange={(event) => setAccessForm({ ...accessForm, password: event.target.value })} /><button type="button" className="grid w-12 place-items-center text-startt-muted" onClick={() => setShowAccessPassword((value) => !value)}>{showAccessPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></div><input className="min-h-12 rounded-xl border border-startt-border bg-white px-3 text-sm shadow-sm outline-startt-green transition focus:border-startt-green focus:shadow-input" type={showAccessPassword ? "text" : "password"} placeholder="Confirmar nova senha" value={accessForm.confirm_password} onChange={(event) => setAccessForm({ ...accessForm, confirm_password: event.target.value })} /><label className="flex min-h-12 items-center gap-2 rounded-2xl bg-startt-paper px-4 font-bold"><input type="checkbox" checked={accessForm.is_active} onChange={(event) => setAccessForm({ ...accessForm, is_active: event.target.checked })} /> Usuário ativo</label><button className="min-h-12 rounded-xl bg-startt-green px-4 font-black text-white">Salvar acesso</button></form></FormDrawer><Table headers={["Empresa", "Slug", "Plano", "Assinatura", "Mensal", "Vencimento", "Ações"]} rows={db.companies.map((company) => [<div key={company.id} className="flex items-center gap-3">{company.logo_url ? <img className="h-10 w-10 rounded-xl object-cover" src={companyLogoUrl(company)} alt={company.name} /> : <span className="grid h-10 w-10 place-items-center rounded-xl bg-startt-green font-black text-white">S</span>}<span className="font-black">{company.name}</span></div>, `/${company.slug}`, db.plans.find((plan) => plan.id === company.plan_id)?.name || company.plan, company.subscription_status, money(company.monthly_price), `${company.due_day} • ${company.next_due_date}`, <div key={company.id} className="flex flex-wrap gap-2"><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => startEdit(company)}>Editar</button><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => openAccess(company)}>Gerenciar acesso</button><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { status: company.status === "blocked" ? "active" : "blocked" })}>{company.status === "blocked" ? "Desbloquear" : "Bloquear"}</button><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { subscription_status: "active", status: company.status === "blocked" ? "active" : company.status, last_payment_date: todayInput(), payment_notes: "Marcado como pago pelo Master." })}>Marcar pago</button><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { subscription_status: "overdue", payment_notes: "Marcado como inadimplente pelo Master." })}>Inadimplente</button><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { status: "canceled", subscription_status: "canceled" })}>Cancelar</button><button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { status: "active", subscription_status: "active" })}>Reativar</button><a className="rounded-xl border px-3 py-2 font-bold" href={`/${company.slug}/admin`}>Simular</a><button className="rounded-xl bg-startt-red px-3 py-2 font-bold text-white" onClick={() => deleteCompany(company)}>Excluir</button></div>])} /></CrudShell>;
 }
 

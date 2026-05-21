@@ -246,6 +246,24 @@ export type Report = {
   created_at: string;
 };
 
+export type InventoryUnit = "un" | "kg" | "g" | "litro" | "ml" | "pacote" | "caixa";
+
+export type InventoryItem = {
+  id: ID;
+  company_id: ID;
+  name: string;
+  category: string;
+  current_quantity: number;
+  minimum_quantity: number;
+  unit: InventoryUnit;
+  notes: string;
+  active: boolean;
+  purchase_flag: boolean;
+  purchase_resolved: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
 export type MockDatabaseState = {
   companies: Company[];
   plans: Plan[];
@@ -263,6 +281,7 @@ export type MockDatabaseState = {
   cash_sales: CashSale[];
   print_settings: PrintSettings[];
   reports: Report[];
+  inventory_items: InventoryItem[];
 };
 
 const now = "2026-04-26T12:00:00.000Z";
@@ -476,6 +495,10 @@ export const initialMockDatabase: MockDatabaseState = {
   reports: [
     { id: "rep_dog_1", company_id: "cmp_dogexpress", name: "Resumo diário", type: "all", created_at: now },
   ],
+  inventory_items: [
+    { id: "inv_dog_1", company_id: "cmp_dogexpress", name: "Salsicha premium", category: "Cozinha", current_quantity: 18, minimum_quantity: 10, unit: "un", notes: "Usada nos dogs principais", active: true, purchase_flag: false, purchase_resolved: false, created_at: now, updated_at: now },
+    { id: "inv_dog_2", company_id: "cmp_dogexpress", name: "Pão de hot dog", category: "Padaria", current_quantity: 6, minimum_quantity: 12, unit: "un", notes: "", active: true, purchase_flag: true, purchase_resolved: false, created_at: now, updated_at: now },
+  ],
 };
 
 export function createDatabaseApi(state: MockDatabaseState) {
@@ -501,6 +524,7 @@ export function createDatabaseApi(state: MockDatabaseState) {
         cash_sales: state.cash_sales.filter((item) => item.company_id === company_id),
         print_settings: state.print_settings.find((item) => item.company_id === company_id),
         reports: state.reports.filter((item) => item.company_id === company_id),
+        inventory_items: state.inventory_items.filter((item) => item.company_id === company_id),
       };
     },
   };
