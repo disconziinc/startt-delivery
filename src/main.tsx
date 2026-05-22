@@ -1645,6 +1645,15 @@ function Cashier({ company, user, products, setDbState }: { company: Company; us
   function add(product: Product) {
     setCart((current) => current.find((item) => item.product.id === product.id) ? current.map((item) => item.product.id === product.id ? { ...item, qty: item.qty + 1 } : item) : [...current, { product, qty: 1 }]);
   }
+  function decrease(productId: string) {
+    setCart((current) => current.flatMap((item) => {
+      if (item.product.id !== productId) return [item];
+      return item.qty > 1 ? [{ ...item, qty: item.qty - 1 }] : [];
+    }));
+  }
+  function remove(productId: string) {
+    setCart((current) => current.filter((item) => item.product.id !== productId));
+  }
   function finish() {
     if (!cart.length) {
       notify("error", "Adicione pelo menos um produto ao caixa.");
@@ -1663,7 +1672,23 @@ function Cashier({ company, user, products, setDbState }: { company: Company; us
         <div className="grid gap-3 md:grid-cols-2">{products.map((product) => <button key={product.id} onClick={() => add(product)} className="rounded-lg border border-black/10 bg-white p-4 text-left"><b>{product.name}</b><span className="block text-startt-muted">{money(product.price)}</span></button>)}</div>
       </Panel>
       <Panel title="Carrinho do caixa">
-        <div className="grid gap-3">{cart.map((item) => <div key={item.product.id} className="flex justify-between gap-3 border-b border-black/10 pb-2"><span>{item.qty}x {item.product.name}</span><b>{money(item.qty * item.product.price)}</b></div>)}</div>
+        <div className="grid gap-3">
+          {cart.map((item) => (
+            <div key={item.product.id} className="grid gap-3 border-b border-black/10 pb-3">
+              <div className="flex justify-between gap-3">
+                <span className="font-bold">{item.qty}x {item.product.name}</span>
+                <b>{money(item.qty * item.product.price)}</b>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button type="button" onClick={() => decrease(item.product.id)} className="grid h-10 w-10 place-items-center rounded-xl border border-black/10 bg-white font-black" aria-label={`Diminuir ${item.product.name}`}><Minus size={16} /></button>
+                <button type="button" onClick={() => add(item.product)} className="grid h-10 w-10 place-items-center rounded-xl border border-black/10 bg-white font-black" aria-label={`Adicionar ${item.product.name}`}><Plus size={16} /></button>
+                <button type="button" onClick={() => remove(item.product.id)} className="ml-auto inline-flex min-h-10 items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 text-sm font-black text-startt-red"><Trash2 size={16} /> Remover</button>
+              </div>
+            </div>
+          ))}
+          {!cart.length && <p className="rounded-xl bg-startt-paper p-4 text-sm font-bold text-startt-muted">Nenhum item no carrinho.</p>}
+        </div>
+        {cart.length > 0 && <button type="button" onClick={() => setCart([])} className="w-fit rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-black text-startt-muted">Limpar carrinho</button>}
         <Input placeholder="Desconto manual" value={String(discount)} onChange={(value) => setDiscount(Number(value) || 0)} />
         <Select value={payment} onChange={(value) => setPayment(value as PaymentMethod)}><option>Pix</option><option>Cartão</option><option>Dinheiro</option></Select>
         <Totals subtotal={subtotal} discount={discount} deliveryFee={0} total={total} />
