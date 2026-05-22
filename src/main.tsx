@@ -2555,32 +2555,67 @@ function MasterCompanies({ db, setDbState }: { db: DatabaseApi; setDbState: Reac
         </form>
       </FormDrawer>
 
-      <Table
-        headers={["Empresa", "Slug", "Assistente", "Plano", "Assinatura", "Mensal", "Vencimento", "Ações"]}
-        rows={db.companies.map((company) => [
-          <div key={company.id} className="flex items-center gap-3">{company.logo_url ? <img className="h-10 w-10 rounded-xl object-cover" src={companyLogoUrl(company)} alt={company.name} /> : <span className="grid h-10 w-10 place-items-center rounded-xl bg-startt-green font-black text-white">S</span>}<span className="font-black">{company.name}</span></div>,
-          `/${company.slug}`,
-          <span key={company.id} className={`inline-flex rounded-full px-3 py-1 text-xs font-black ${company.assistant_enabled && ["active", "trial"].includes(company.assistant_status || "") ? "bg-startt-green text-white" : company.assistant_status === "blocked" ? "bg-startt-red text-white" : "bg-startt-paper text-startt-muted"}`}>{company.assistant_enabled ? company.assistant_status || "active" : "inactive"}</span>,
-          db.plans.find((plan) => plan.id === company.plan_id)?.name || company.plan,
-          company.subscription_status,
-          money(company.monthly_price),
-          `${company.due_day} • ${company.next_due_date}`,
-          <div key={company.id} className="flex flex-wrap gap-2">
-            <button className="rounded-xl border px-3 py-2 font-bold" onClick={() => startEdit(company)}>Editar</button>
-            <button className="rounded-xl border px-3 py-2 font-bold" onClick={() => openAssistant(company)}>Assistente</button>
-            <button className="rounded-xl border px-3 py-2 font-bold" onClick={() => openAccess(company)}>Gerenciar acesso</button>
-            <button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { status: company.status === "blocked" ? "active" : "blocked" })}>{company.status === "blocked" ? "Desbloquear" : "Bloquear"}</button>
-            <button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { assistant_enabled: true, assistant_status: "active", assistant_notes: "Assistente liberado pelo Master." })}>Liberar assistente</button>
-            <button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { assistant_enabled: false, assistant_status: "blocked", assistant_notes: "Assistente bloqueado pelo Master." })}>Bloquear assistente</button>
-            <button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { subscription_status: "active", status: company.status === "blocked" ? "active" : company.status, last_payment_date: todayInput(), payment_notes: "Marcado como pago pelo Master." })}>Marcar pago</button>
-            <button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { subscription_status: "overdue", payment_notes: "Marcado como inadimplente pelo Master." })}>Inadimplente</button>
-            <button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { status: "canceled", subscription_status: "canceled" })}>Cancelar</button>
-            <button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { status: "active", subscription_status: "active" })}>Reativar</button>
-            <a className="rounded-xl border px-3 py-2 font-bold" href={`/${company.slug}/admin`}>Simular</a>
-            <button className="rounded-xl bg-startt-red px-3 py-2 font-bold text-white" onClick={() => deleteCompany(company)}>Excluir</button>
-          </div>,
-        ])}
-      />
+      <div className="grid gap-4">
+        <div className="grid gap-3 rounded-3xl border border-black/10 bg-white p-4 shadow-card lg:grid-cols-4">
+          <HelpText>Gerenciar acesso: cria ou altera o login único da lancheria para Delivery e Assistente.</HelpText>
+          <HelpText>Assistente: controla se a lancheria pode usar o Startt Assistente no Windows.</HelpText>
+          <HelpText>Status financeiro: indica se a assinatura está ativa, em teste, inadimplente ou cancelada.</HelpText>
+          <HelpText>Plano: define assinatura, valor mensal e recursos liberados.</HelpText>
+        </div>
+
+        {db.companies.length ? db.companies.map((company) => {
+          const planName = db.plans.find((plan) => plan.id === company.plan_id)?.name || company.plan;
+          const assistantActive = company.assistant_enabled && ["active", "trial"].includes(company.assistant_status || "");
+          const companyBadge = company.status === "active" ? "bg-emerald-100 text-emerald-800" : company.status === "trial" ? "bg-amber-100 text-amber-800" : "bg-red-100 text-red-800";
+          const financeBadge = company.subscription_status === "active" ? "bg-emerald-100 text-emerald-800" : company.subscription_status === "trialing" ? "bg-amber-100 text-amber-800" : "bg-red-100 text-red-800";
+          const assistantBadge = assistantActive ? "bg-startt-green text-white" : company.assistant_status === "blocked" ? "bg-startt-red text-white" : "bg-startt-paper text-startt-muted";
+
+          return (
+            <article key={company.id} className="grid gap-4 rounded-3xl border border-black/10 bg-white p-4 shadow-card transition hover:-translate-y-0.5 hover:shadow-xl md:p-5">
+              <div className="grid gap-4 lg:grid-cols-[minmax(260px,1.15fr)_minmax(0,1.2fr)_auto] lg:items-start">
+                <div className="flex min-w-0 items-start gap-3">
+                  {company.logo_url ? <img className="h-14 w-14 rounded-2xl object-cover shadow-sm" src={companyLogoUrl(company)} alt={company.name} /> : <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-startt-green font-black text-white shadow-sm">S</span>}
+                  <div className="min-w-0">
+                    <h2 className="truncate text-lg font-black text-startt-ink">{company.name}</h2>
+                    <a className="mt-1 block truncate text-sm font-bold text-startt-green" href={`/${company.slug}`} target="_blank" rel="noreferrer">starttdelivery.com.br/{company.slug}</a>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <span className={`rounded-full px-3 py-1 text-xs font-black ${companyBadge}`}>{company.status}</span>
+                      <span className={`rounded-full px-3 py-1 text-xs font-black ${assistantBadge}`}>Assistente {company.assistant_enabled ? company.assistant_status || "active" : "inactive"}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="rounded-2xl bg-startt-soft p-3"><span className="text-[11px] font-black uppercase text-startt-muted">Plano</span><strong className="mt-1 block text-sm">{planName}</strong></div>
+                  <div className="rounded-2xl bg-startt-soft p-3"><span className="text-[11px] font-black uppercase text-startt-muted">Mensal</span><strong className="mt-1 block text-sm">{money(company.monthly_price)}</strong></div>
+                  <div className="rounded-2xl bg-startt-soft p-3"><span className="text-[11px] font-black uppercase text-startt-muted">Vencimento</span><strong className="mt-1 block text-sm">Dia {company.due_day}</strong></div>
+                  <div className="rounded-2xl bg-startt-soft p-3"><span className="text-[11px] font-black uppercase text-startt-muted">Financeiro</span><strong className={`mt-1 inline-flex rounded-full px-2 py-1 text-xs ${financeBadge}`}>{company.subscription_status}</strong></div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 lg:justify-end">
+                  <button className="min-h-11 rounded-xl bg-startt-green px-3 font-black text-white" onClick={() => startEdit(company)}>Editar</button>
+                  <button className="min-h-11 rounded-xl border border-startt-border bg-white px-3 font-black" onClick={() => openAccess(company)}>Acesso</button>
+                  <button className="min-h-11 rounded-xl border border-startt-border bg-white px-3 font-black" onClick={() => openAssistant(company)}>Assistente</button>
+                  <details className="relative">
+                    <summary className="grid min-h-11 cursor-pointer list-none place-items-center rounded-xl border border-startt-border bg-white px-3 font-black">...</summary>
+                    <div className="absolute right-0 z-20 mt-2 grid w-56 gap-1 rounded-2xl border border-black/10 bg-white p-2 shadow-drawer">
+                      <button className="rounded-xl px-3 py-2 text-left text-sm font-bold hover:bg-startt-soft" onClick={() => updateCompany(company.id, { status: company.status === "blocked" ? "active" : "blocked" })}>{company.status === "blocked" ? "Desbloquear empresa" : "Bloquear empresa"}</button>
+                      <button className="rounded-xl px-3 py-2 text-left text-sm font-bold hover:bg-startt-soft" onClick={() => updateCompany(company.id, { assistant_enabled: true, assistant_status: "active", assistant_notes: "Assistente liberado pelo Master." })}>Liberar assistente</button>
+                      <button className="rounded-xl px-3 py-2 text-left text-sm font-bold hover:bg-startt-soft" onClick={() => updateCompany(company.id, { assistant_enabled: false, assistant_status: "blocked", assistant_notes: "Assistente bloqueado pelo Master." })}>Bloquear assistente</button>
+                      <button className="rounded-xl px-3 py-2 text-left text-sm font-bold hover:bg-startt-soft" onClick={() => updateCompany(company.id, { subscription_status: "active", status: company.status === "blocked" ? "active" : company.status, last_payment_date: todayInput(), payment_notes: "Marcado como pago pelo Master." })}>Marcar pago</button>
+                      <button className="rounded-xl px-3 py-2 text-left text-sm font-bold hover:bg-startt-soft" onClick={() => updateCompany(company.id, { subscription_status: "overdue", payment_notes: "Marcado como inadimplente pelo Master." })}>Inadimplente</button>
+                      <button className="rounded-xl px-3 py-2 text-left text-sm font-bold hover:bg-startt-soft" onClick={() => updateCompany(company.id, { status: "canceled", subscription_status: "canceled" })}>Cancelar</button>
+                      <button className="rounded-xl px-3 py-2 text-left text-sm font-bold hover:bg-startt-soft" onClick={() => updateCompany(company.id, { status: "active", subscription_status: "active" })}>Reativar</button>
+                      <a className="rounded-xl px-3 py-2 text-left text-sm font-bold hover:bg-startt-soft" href={`/${company.slug}/admin`}>Simular painel</a>
+                      <button className="rounded-xl bg-startt-red px-3 py-2 text-left text-sm font-black text-white" onClick={() => deleteCompany(company)}>Excluir empresa</button>
+                    </div>
+                  </details>
+                </div>
+              </div>
+            </article>
+          );
+        }) : <div className="rounded-3xl border border-black/10 bg-white p-8 text-center text-startt-muted shadow-card">Nenhuma empresa cadastrada ainda.</div>}
+      </div>
     </CrudShell>
   );
 }
