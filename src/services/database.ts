@@ -96,8 +96,10 @@ function toSupabaseRow<T>(table: TableName, row: T): T {
   if (table === "users") {
     const userRow = row as Record<string, unknown>;
     const isActive = typeof userRow.is_active === "boolean" ? userRow.is_active : typeof userRow.active === "boolean" ? userRow.active : true;
+    const assistantRole = typeof userRow.assistant_role === "string" && userRow.assistant_role.trim() ? userRow.assistant_role : "operator";
     cleaned.is_active = isActive;
     cleaned.active = isActive;
+    cleaned.assistant_role = assistantRole;
   }
   return cleaned as T;
 }
