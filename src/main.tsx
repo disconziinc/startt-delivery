@@ -192,7 +192,14 @@ function positiveNumber(value: string | number) {
 
 function parseMoney(value: string | number) {
   if (typeof value === "number") return value;
-  const normalized = value.trim().replace(/\./g, "").replace(",", ".");
+  const raw = value.trim().replace(/[^\d,.-]/g, "");
+  const hasComma = raw.includes(",");
+  const hasDot = raw.includes(".");
+  const normalized = hasComma
+    ? raw.replace(/\./g, "").replace(",", ".")
+    : hasDot && /^\d{1,3}(\.\d{3})+$/.test(raw)
+      ? raw.replace(/\./g, "")
+      : raw;
   return Number(normalized);
 }
 

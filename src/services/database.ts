@@ -348,15 +348,6 @@ async function syncTable(table: TableName, rows: unknown[], key: "id" | "company
   if (rows.length) {
     const sanitizedRows = rows.map((row) => toSupabaseRow(table, row));
     const { error } = await client.from(table).upsert(sanitizedRows as never, { onConflict: key });
-    if (error && table === "categories" && /emoji/i.test(error.message)) {
-      const fallbackRows = sanitizedRows.map((row) => {
-        const { emoji: _emoji, ...rest } = row as Record<string, unknown>;
-        return rest;
-      });
-      const { error: retryError } = await client.from(table).upsert(fallbackRows as never, { onConflict: key });
-      if (retryError) throw withSupabaseContext(table, "upsert:retry_without_emoji", retryError, fallbackRows);
-      return;
-    }
     if (error && table === "companies" && /assistant_/i.test(error.message)) {
       const fallbackRows = sanitizedRows.map((row) => {
         const {
