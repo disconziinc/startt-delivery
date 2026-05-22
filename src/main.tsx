@@ -43,6 +43,7 @@ import {
 import {
   CashSale,
   Category,
+  AssistantStatus,
   Company,
   CompanyStatus,
   Coupon,
@@ -2311,6 +2312,288 @@ function MasterCompanies({ db, setDbState }: { db: DatabaseApi; setDbState: Reac
   const [form, setForm] = useState(emptyForm);
   const [accessOpen, setAccessOpen] = useState(false);
   const [accessForm, setAccessForm] = useState({ company_id: "", user_id: "", name: "", email: "", password: "", confirm_password: "", role: "dono" as UserRole, is_active: true });
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantForm, setAssistantForm] = useState({ company_id: "", assistant_enabled: false, assistant_status: "inactive" as AssistantStatus, assistant_plan: "mvp", assistant_trial_until: "", assistant_notes: "" });
+  const [showAccessPassword, setShowAccessPassword] = useState(false);
+
+  function selectedPlan(planId = form.plan_id) {
+    return db.plans.find((plan) => plan.id === planId) || firstPlan;
+  }
+
+  function primaryUser(companyId: string) {
+    return db.users.find((user) => user.company_id === companyId && user.role === "dono") || db.users.find((user) => user.company_id === companyId);
+  }
+
+  function startCreate() {
+    setForm(emptyForm);
+    setFormOpen(true);
+  }
+
+  function startEdit(company: Company) {
+    setForm({
+      id: company.id,
+      name: company.name,
+      slug: company.slug,
+      whatsapp: company.whatsapp,
+      address: company.address,
+      status: company.status,
+      plan_id: company.plan_id,
+      primary_color: company.primary_color,
+      monthly_price: String(company.monthly_price),
+      due_day: String(company.due_day),
+      next_due_date: company.next_due_date,
+      subscription_status: company.subscription_status,
+      is_registration_enabled: company.is_registration_enabled,
+      admin_email: "",
+      admin_password: "",
+      payment_notes: company.payment_notes,
+    });
+    setFormOpen(true);
+  }
+
+  function openAccess(company: Company) {
+    const user = primaryUser(company.id);
+    setAccessForm({ company_id: company.id, user_id: user?.id || "", name: user?.name || "Admin", email: user?.email || "", password: "", confirm_password: "", role: user?.role || "dono", is_active: user?.is_active ?? true });
+    setShowAccessPassword(false);
+    setAccessOpen(true);
+  }
+
+  function openAssistant(company: Company) {
+    setAssistantForm({
+      company_id: company.id,
+      assistant_enabled: company.assistant_enabled ?? false,
+      assistant_status: company.assistant_status || "inactive",
+      assistant_plan: company.assistant_plan || "mvp",
+      assistant_trial_until: company.assistant_trial_until?.slice(0, 10) || "",
+      assistant_notes: company.assistant_notes || "",
+    });
+    setAssistantOpen(true);
+  }
+
+  function saveAssistant(event: React.FormEvent) {
+    event.preventDefault();
+    const trialUntil = assistantForm.assistant_trial_until ? `${assistantForm.assistant_trial_until}T23:59:59.000Z` : "";
+    setDbState((current) => ({
+      ...current,
+      companies: current.companies.map((company) => company.id === assistantForm.company_id ? {
+        ...company,
+        assistant_enabled: assistantForm.assistant_enabled,
+        assistant_status: assistantForm.assistant_status,
+        assistant_plan: assistantForm.assistant_plan,
+        assistant_trial_until: trialUntil,
+        assistant_notes: assistantForm.assistant_notes,
+        updated_at: new Date().toISOString(),
+      } : company),
+    }));
+    setAssistantOpen(false);
+    notify("success", "Configuração do Assistente Startt atualizada.");
+  }
+
+  function saveAccess(event: React.FormEvent) {
+    event.preventDefault();
+    if (!accessForm.email.trim()) {
+      notify("error", "Informe o login/e-mail da lancheria.");
+      return;
+    }
+    if (!accessForm.user_id && !accessForm.password) {
+      notify("error", "Defina uma senha inicial para a lancheria.");
+      return;
+    }
+    if (accessForm.password || accessForm.confirm_password) {
+      if (accessForm.password.length < 6) {
+        notify("error", "A nova senha precisa ter pelo menos 6 caracteres.");
+        return;
+      }
+      if (accessForm.password !== accessForm.confirm_password) {
+        notify("error", "A confirmação da senha não confere.");
+        return;
+      }
+    }
+    const created = new Date().toISOString();
+    const user: User = { id: accessForm.user_id || id("usr"), company_id: accessForm.company_id, name: accessForm.name || "Admin", email: accessForm.email.trim(), password: accessForm.password || primaryUser(accessForm.company_id)?.password || "", role: accessForm.role, is_active: accessForm.is_active, created_at: primaryUser(accessForm.company_id)?.created_at || created };
+    setDbState((current) => ({ ...current, users: accessForm.user_id ? current.users.map((item) => item.id === accessForm.user_id && item.company_id === accessForm.company_id ? user : item) : [user, ...current.users] }));
+    setAccessOpen(false);
+    notify("success", "Acesso da lancheria atualizado com sucesso.");
+  }
+
+  function saveCompany(event: React.FormEvent) {
+    event.preventDefault();
+    if (!form.name || !form.slug || !form.whatsapp || !form.address || !form.plan_id || !form.primary_color) {
+      notify("error", "Preencha nome, slug, WhatsApp, endereço, plano e cor principal.");
+      return;
+    }
+    if (!isValidSlug(form.slug)) {
+      notify("error", "Use um slug simples, com letras minúsculas, números e hífen. Exemplo: pizzariadojoao.");
+      return;
+    }
+    if (!positiveNumber(form.monthly_price)) {
+      notify("error", "Informe um valor mensal válido.");
+      return;
+    }
+    if (!form.id && form.admin_email && form.admin_password.length < 6) {
+      notify("error", "Informe uma senha inicial com pelo menos 6 caracteres para o admin da lancheria.");
+      return;
+    }
+    const plan = selectedPlan();
+    const created = new Date().toISOString();
+    const companyId = form.id || id("cmp");
+    const previous = db.companies.find((item) => item.id === form.id);
+    const company: Company = {
+      id: companyId,
+      name: form.name,
+      slug: form.slug,
+      logo_url: previous?.logo_url || "",
+      banner_url: previous?.banner_url || previous?.hero_image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1600&q=80",
+      whatsapp: form.whatsapp,
+      address: form.address,
+      hero_image: previous?.hero_image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1600&q=80",
+      primary_color: form.primary_color,
+      minimum_order: previous?.minimum_order || 25,
+      estimated_delivery_time: previous?.estimated_delivery_time || "35-45 min",
+      is_open: previous?.is_open ?? true,
+      delivery_enabled: previous?.delivery_enabled ?? true,
+      pickup_enabled: previous?.pickup_enabled ?? true,
+      status: form.status,
+      plan: plan?.name || "Start",
+      is_registration_enabled: form.is_registration_enabled,
+      plan_id: form.plan_id,
+      subscription_status: form.subscription_status,
+      monthly_price: parseMoney(form.monthly_price),
+      due_day: Number(form.due_day),
+      next_due_date: form.next_due_date,
+      last_payment_date: previous?.last_payment_date || "",
+      payment_notes: form.payment_notes,
+      assistant_enabled: previous?.assistant_enabled ?? false,
+      assistant_status: previous?.assistant_status || "inactive",
+      assistant_trial_until: previous?.assistant_trial_until || "",
+      assistant_notes: previous?.assistant_notes || "",
+      assistant_plan: previous?.assistant_plan || "mvp",
+      footer_message: previous?.footer_message || "produzido por Startt Facilities",
+      opening_hours: previous?.opening_hours || "Aberto hoje",
+      created_at: previous?.created_at || created,
+      updated_at: created,
+    };
+    setDbState((current) => ({
+      ...current,
+      companies: form.id ? current.companies.map((item) => item.id === form.id ? company : item) : [company, ...current.companies],
+      settings: form.id ? current.settings : [{ id: id("set"), company_id: companyId, critical_locked: false, pix_enabled: false, pix_key: "" }, ...current.settings],
+      print_settings: form.id ? current.print_settings : [{ company_id: companyId, auto_print_orders: false, auto_print_cash_sales: false, printer_name: "", paper_width: "80mm", copies: 1, footer_text: "Startt Delivery — produzido por Startt Facilities" }, ...current.print_settings],
+      users: !form.id && form.admin_email ? [{ id: id("usr"), company_id: companyId, name: "Admin inicial", email: form.admin_email, password: form.admin_password, role: "dono", is_active: true, created_at: created }, ...current.users] : current.users,
+    }));
+    setFormOpen(false);
+    notify("success", form.id ? "Empresa atualizada com sucesso." : "Empresa criada com sucesso.");
+  }
+
+  function updateCompany(companyId: string, patch: Partial<Company>) {
+    setDbState((current) => ({ ...current, companies: current.companies.map((company) => company.id === companyId ? { ...company, ...patch, updated_at: new Date().toISOString() } : company) }));
+    notify("success", "Empresa atualizada.");
+  }
+
+  function deleteCompany(company: Company) {
+    if (!confirm(`Excluir ${company.name} e TODOS os dados vinculados?`)) return;
+    setDbState((current) => ({ ...current, companies: current.companies.filter((item) => item.id !== company.id), users: current.users.filter((item) => item.company_id !== company.id), categories: current.categories.filter((item) => item.company_id !== company.id), products: current.products.filter((item) => item.company_id !== company.id), orders: current.orders.filter((item) => item.company_id !== company.id), order_items: current.order_items.filter((item) => item.company_id !== company.id), customers: current.customers.filter((item) => item.company_id !== company.id), voucher_brands: current.voucher_brands.filter((item) => item.company_id !== company.id), delivery_zones: current.delivery_zones.filter((item) => item.company_id !== company.id), coupons: current.coupons.filter((item) => item.company_id !== company.id), settings: current.settings.filter((item) => item.company_id !== company.id), cash_sales: current.cash_sales.filter((item) => item.company_id !== company.id), print_settings: current.print_settings.filter((item) => item.company_id !== company.id), reports: current.reports.filter((item) => item.company_id !== company.id), inventory_items: current.inventory_items.filter((item) => item.company_id !== company.id) }));
+    notify("success", "Empresa e dados vinculados foram excluídos.");
+  }
+
+  return (
+    <CrudShell title="Empresas" description="CRUD completo, controle de acesso, financeiro e Assistente Startt por empresa. O mesmo login da lancheria no Delivery libera o app desktop quando o Assistente estiver ativo.">
+      <div className="flex flex-wrap justify-end gap-2">
+        <button onClick={startCreate} className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-startt-green px-4 font-black text-white shadow-lg shadow-startt-green/20"><Plus size={18} /> Nova empresa</button>
+      </div>
+
+      <FormDrawer open={formOpen} title={form.id ? "Editar empresa" : "Nova empresa"} description="Controle dados comerciais, plano, assinatura e usuário inicial da lancheria." onClose={() => setFormOpen(false)}>
+        <form onSubmit={saveCompany} className="grid gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="grid gap-1"><Input placeholder="Nome" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><HelpText>Nome que aparece no cardápio e no painel da loja.</HelpText></label>
+            <label className="grid gap-1"><Input placeholder="Slug" value={form.slug} onChange={(value) => setForm({ ...form, slug: value })} /><HelpText>Link público. Ex: starttdelivery.com.br/nomedaloja</HelpText></label>
+            <label className="grid gap-1"><Input placeholder="WhatsApp" value={form.whatsapp} onChange={(value) => setForm({ ...form, whatsapp: value })} /><HelpText>Número que recebe pedidos e contatos.</HelpText></label>
+            <label className="grid gap-1"><Input placeholder="Endereço" value={form.address} onChange={(value) => setForm({ ...form, address: value })} /><HelpText>Endereço exibido no cardápio público.</HelpText></label>
+            <label className="grid gap-1"><Select value={form.status} onChange={(value) => setForm({ ...form, status: value as CompanyStatus })}><option>trial</option><option>active</option><option>blocked</option><option>canceled</option></Select><HelpText>Bloqueado impede acesso e cancelado suspende a loja.</HelpText></label>
+            <label className="grid gap-1"><Select value={form.plan_id} onChange={(value) => { const plan = selectedPlan(value); setForm({ ...form, plan_id: value, monthly_price: String(plan?.monthly_price || form.monthly_price) }); }}>{db.plans.filter((plan) => plan.is_active || plan.id === form.plan_id).map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</Select><HelpText>Plano define limites de produtos, usuários, cupons, relatórios e impressão.</HelpText></label>
+            <label className="grid gap-1"><Input placeholder="Cor principal" value={form.primary_color} onChange={(value) => setForm({ ...form, primary_color: value })} /><HelpText>Cor da identidade da lancheria no cardápio.</HelpText></label>
+            <label className="grid gap-1"><Input placeholder="Valor mensal" value={form.monthly_price} onChange={(value) => setForm({ ...form, monthly_price: value })} /><HelpText>Mensalidade usada no controle financeiro do SaaS.</HelpText></label>
+            <label className="grid gap-1"><Input placeholder="Dia vencimento" value={form.due_day} onChange={(value) => setForm({ ...form, due_day: value })} /><HelpText>Dia do mês para acompanhar cobranças.</HelpText></label>
+            <label className="grid gap-1"><Input type="date" placeholder="Próxima data" value={form.next_due_date} onChange={(value) => setForm({ ...form, next_due_date: value })} /><HelpText>Próximo vencimento da assinatura.</HelpText></label>
+            <label className="grid gap-1"><Select value={form.subscription_status} onChange={(value) => setForm({ ...form, subscription_status: value as SubscriptionStatus })}><option>trialing</option><option>active</option><option>overdue</option><option>canceled</option></Select><HelpText>Status financeiro usado no painel master.</HelpText></label>
+            <label className="grid gap-1"><Input placeholder="Admin inicial opcional" value={form.admin_email} onChange={(value) => setForm({ ...form, admin_email: value })} /><HelpText>E-mail do primeiro acesso da lancheria. Também será o login do Startt Assistente se a empresa estiver liberada.</HelpText></label>
+            <label className="grid gap-1"><Input placeholder="Senha inicial do admin" type="password" value={form.admin_password} onChange={(value) => setForm({ ...form, admin_password: value })} /><HelpText>Senha temporária para o primeiro login.</HelpText></label>
+          </div>
+          <label className="grid gap-1"><Input placeholder="Observações financeiras" value={form.payment_notes} onChange={(value) => setForm({ ...form, payment_notes: value })} /><HelpText>Anotações internas sobre pagamento, negociação ou bloqueio.</HelpText></label>
+          <label className="flex items-center gap-2 rounded-2xl bg-startt-paper p-4 font-bold"><input type="checkbox" checked={form.is_registration_enabled} onChange={(event) => setForm({ ...form, is_registration_enabled: event.target.checked })} /> Cadastro/acesso habilitado</label>
+          <button className="min-h-12 rounded-xl bg-startt-green px-4 font-black text-white shadow-lg shadow-startt-green/20">{form.id ? "Salvar alterações" : "Criar empresa"}</button>
+        </form>
+      </FormDrawer>
+
+      <FormDrawer open={accessOpen} title="Gerenciar acesso" description="Edite o login e resete a senha da lancheria sem perder o vínculo com a empresa." onClose={() => setAccessOpen(false)}>
+        <form onSubmit={saveAccess} className="grid gap-4">
+          <Input placeholder="Nome do usuário" value={accessForm.name} onChange={(value) => setAccessForm({ ...accessForm, name: value })} />
+          <Input placeholder="Login/e-mail" value={accessForm.email} onChange={(value) => setAccessForm({ ...accessForm, email: value })} />
+          <HelpText>Este login acessa a empresa vinculada no Delivery e no Startt Assistente, quando a lancheria estiver liberada.</HelpText>
+          <Select value={accessForm.role} onChange={(value) => setAccessForm({ ...accessForm, role: value as UserRole })}>{(["dono", "gerente", "caixa", "atendente"] as UserRole[]).map((role) => <option key={role}>{role}</option>)}</Select>
+          <div className="grid gap-2">
+            <label className="text-sm font-bold">Nova senha</label>
+            <div className="flex min-h-12 overflow-hidden rounded-xl border border-startt-border bg-white shadow-sm focus-within:border-startt-green focus-within:shadow-input">
+              <input className="min-w-0 flex-1 px-3 text-sm outline-none" type={showAccessPassword ? "text" : "password"} placeholder="Deixe vazio para manter" value={accessForm.password} onChange={(event) => setAccessForm({ ...accessForm, password: event.target.value })} />
+              <button type="button" className="grid w-12 place-items-center text-startt-muted" onClick={() => setShowAccessPassword((value) => !value)}>{showAccessPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button>
+            </div>
+          </div>
+          <input className="min-h-12 rounded-xl border border-startt-border bg-white px-3 text-sm shadow-sm outline-startt-green transition focus:border-startt-green focus:shadow-input" type={showAccessPassword ? "text" : "password"} placeholder="Confirmar nova senha" value={accessForm.confirm_password} onChange={(event) => setAccessForm({ ...accessForm, confirm_password: event.target.value })} />
+          <label className="flex min-h-12 items-center gap-2 rounded-2xl bg-startt-paper px-4 font-bold"><input type="checkbox" checked={accessForm.is_active} onChange={(event) => setAccessForm({ ...accessForm, is_active: event.target.checked })} /> Usuário ativo</label>
+          <button className="min-h-12 rounded-xl bg-startt-green px-4 font-black text-white">Salvar acesso</button>
+        </form>
+      </FormDrawer>
+
+      <FormDrawer open={assistantOpen} title="Assistente Startt" description="Libere, bloqueie ou acompanhe o Assistente da lancheria pelo master." onClose={() => setAssistantOpen(false)}>
+        <form onSubmit={saveAssistant} className="grid gap-4">
+          <label className="flex min-h-12 items-center gap-2 rounded-2xl bg-startt-paper px-4 font-bold"><input type="checkbox" checked={assistantForm.assistant_enabled} onChange={(event) => setAssistantForm({ ...assistantForm, assistant_enabled: event.target.checked })} /> Assistente Startt ativo para esta lancheria</label>
+          <HelpText>Quando ativo, usuários vinculados a esta empresa podem entrar no app desktop com o mesmo e-mail e senha do Startt Delivery.</HelpText>
+          <label className="grid gap-1"><Select value={assistantForm.assistant_status} onChange={(value) => setAssistantForm({ ...assistantForm, assistant_status: value as AssistantStatus })}><option value="inactive">inactive</option><option value="active">active</option><option value="trial">trial</option><option value="blocked">blocked</option></Select><HelpText>Status active libera o uso. Trial libera durante o teste. Blocked e inactive bloqueiam o app desktop.</HelpText></label>
+          <label className="grid gap-1"><Input placeholder="Plano do assistente" value={assistantForm.assistant_plan} onChange={(value) => setAssistantForm({ ...assistantForm, assistant_plan: value })} /><HelpText>Exemplo: mvp, basico, pro ou o nome comercial combinado com a lancheria.</HelpText></label>
+          <label className="grid gap-1"><Input type="date" placeholder="Fim do teste" value={assistantForm.assistant_trial_until} onChange={(value) => setAssistantForm({ ...assistantForm, assistant_trial_until: value })} /><HelpText>Data final do período de teste. Pode ficar em branco quando não houver trial.</HelpText></label>
+          <label className="grid gap-1"><textarea className="min-h-28 rounded-xl border border-startt-border bg-white px-3 py-3 text-sm outline-startt-green transition focus:border-startt-green focus:shadow-input" placeholder="Observação interna do Assistente" value={assistantForm.assistant_notes} onChange={(event) => setAssistantForm({ ...assistantForm, assistant_notes: event.target.value })} /><HelpText>Use para registrar cobrança, suporte, teste liberado, bloqueio ou histórico comercial.</HelpText></label>
+          <button className="min-h-12 rounded-xl bg-startt-green px-4 font-black text-white">Salvar Assistente</button>
+        </form>
+      </FormDrawer>
+
+      <Table
+        headers={["Empresa", "Slug", "Assistente", "Plano", "Assinatura", "Mensal", "Vencimento", "Ações"]}
+        rows={db.companies.map((company) => [
+          <div key={company.id} className="flex items-center gap-3">{company.logo_url ? <img className="h-10 w-10 rounded-xl object-cover" src={companyLogoUrl(company)} alt={company.name} /> : <span className="grid h-10 w-10 place-items-center rounded-xl bg-startt-green font-black text-white">S</span>}<span className="font-black">{company.name}</span></div>,
+          `/${company.slug}`,
+          <span key={company.id} className={`inline-flex rounded-full px-3 py-1 text-xs font-black ${company.assistant_enabled && ["active", "trial"].includes(company.assistant_status || "") ? "bg-startt-green text-white" : company.assistant_status === "blocked" ? "bg-startt-red text-white" : "bg-startt-paper text-startt-muted"}`}>{company.assistant_enabled ? company.assistant_status || "active" : "inactive"}</span>,
+          db.plans.find((plan) => plan.id === company.plan_id)?.name || company.plan,
+          company.subscription_status,
+          money(company.monthly_price),
+          `${company.due_day} • ${company.next_due_date}`,
+          <div key={company.id} className="flex flex-wrap gap-2">
+            <button className="rounded-xl border px-3 py-2 font-bold" onClick={() => startEdit(company)}>Editar</button>
+            <button className="rounded-xl border px-3 py-2 font-bold" onClick={() => openAssistant(company)}>Assistente</button>
+            <button className="rounded-xl border px-3 py-2 font-bold" onClick={() => openAccess(company)}>Gerenciar acesso</button>
+            <button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { status: company.status === "blocked" ? "active" : "blocked" })}>{company.status === "blocked" ? "Desbloquear" : "Bloquear"}</button>
+            <button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { assistant_enabled: true, assistant_status: "active", assistant_notes: "Assistente liberado pelo Master." })}>Liberar assistente</button>
+            <button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { assistant_enabled: false, assistant_status: "blocked", assistant_notes: "Assistente bloqueado pelo Master." })}>Bloquear assistente</button>
+            <button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { subscription_status: "active", status: company.status === "blocked" ? "active" : company.status, last_payment_date: todayInput(), payment_notes: "Marcado como pago pelo Master." })}>Marcar pago</button>
+            <button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { subscription_status: "overdue", payment_notes: "Marcado como inadimplente pelo Master." })}>Inadimplente</button>
+            <button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { status: "canceled", subscription_status: "canceled" })}>Cancelar</button>
+            <button className="rounded-xl border px-3 py-2 font-bold" onClick={() => updateCompany(company.id, { status: "active", subscription_status: "active" })}>Reativar</button>
+            <a className="rounded-xl border px-3 py-2 font-bold" href={`/${company.slug}/admin`}>Simular</a>
+            <button className="rounded-xl bg-startt-red px-3 py-2 font-bold text-white" onClick={() => deleteCompany(company)}>Excluir</button>
+          </div>,
+        ])}
+      />
+    </CrudShell>
+  );
+}
+
+function LegacyMasterCompanies({ db, setDbState }: { db: DatabaseApi; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
+  const firstPlan = db.plans.find((plan) => plan.is_active) || db.plans[0];
+  const emptyForm = { id: "", name: "", slug: "", whatsapp: "", address: "", status: "trial" as CompanyStatus, plan_id: firstPlan?.id || "", primary_color: "#116a4b", monthly_price: String(firstPlan?.monthly_price || 49.9), due_day: "10", next_due_date: todayInput(), subscription_status: "trialing" as SubscriptionStatus, is_registration_enabled: true, admin_email: "", admin_password: "", payment_notes: "" };
+  const [formOpen, setFormOpen] = useState(false);
+  const [form, setForm] = useState(emptyForm);
+  const [accessOpen, setAccessOpen] = useState(false);
+  const [accessForm, setAccessForm] = useState({ company_id: "", user_id: "", name: "", email: "", password: "", confirm_password: "", role: "dono" as UserRole, is_active: true });
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantForm, setAssistantForm] = useState({ company_id: "", assistant_enabled: false, assistant_status: "inactive" as AssistantStatus, assistant_plan: "mvp", assistant_trial_until: "", assistant_notes: "" });
   const [showAccessPassword, setShowAccessPassword] = useState(false);
   function selectedPlan(planId = form.plan_id) { return db.plans.find((plan) => plan.id === planId) || firstPlan; }
   function primaryUser(companyId: string) { return db.users.find((user) => user.company_id === companyId && user.role === "dono") || db.users.find((user) => user.company_id === companyId); }
@@ -2321,6 +2604,35 @@ function MasterCompanies({ db, setDbState }: { db: DatabaseApi; setDbState: Reac
     setAccessForm({ company_id: company.id, user_id: user?.id || "", name: user?.name || "Admin", email: user?.email || "", password: "", confirm_password: "", role: user?.role || "dono", is_active: user?.is_active ?? true });
     setShowAccessPassword(false);
     setAccessOpen(true);
+  }
+  function openAssistant(company: Company) {
+    setAssistantForm({
+      company_id: company.id,
+      assistant_enabled: company.assistant_enabled ?? false,
+      assistant_status: company.assistant_status || "inactive",
+      assistant_plan: company.assistant_plan || "mvp",
+      assistant_trial_until: company.assistant_trial_until?.slice(0, 10) || "",
+      assistant_notes: company.assistant_notes || "",
+    });
+    setAssistantOpen(true);
+  }
+  function saveAssistant(event: React.FormEvent) {
+    event.preventDefault();
+    const trialUntil = assistantForm.assistant_trial_until ? `${assistantForm.assistant_trial_until}T23:59:59.000Z` : "";
+    setDbState((current) => ({
+      ...current,
+      companies: current.companies.map((company) => company.id === assistantForm.company_id ? {
+        ...company,
+        assistant_enabled: assistantForm.assistant_enabled,
+        assistant_status: assistantForm.assistant_status,
+        assistant_plan: assistantForm.assistant_plan,
+        assistant_trial_until: trialUntil,
+        assistant_notes: assistantForm.assistant_notes,
+        updated_at: new Date().toISOString(),
+      } : company),
+    }));
+    setAssistantOpen(false);
+    notify("success", "Configuração do Assistente Startt atualizada.");
   }
   function saveAccess(event: React.FormEvent) {
     event.preventDefault();
@@ -2370,7 +2682,7 @@ function MasterCompanies({ db, setDbState }: { db: DatabaseApi; setDbState: Reac
     const created = new Date().toISOString();
     const companyId = form.id || id("cmp");
     const previous = db.companies.find((item) => item.id === form.id);
-    const company: Company = { id: companyId, name: form.name, slug: form.slug, logo_url: previous?.logo_url || "", banner_url: previous?.banner_url || previous?.hero_image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1600&q=80", whatsapp: form.whatsapp, address: form.address, hero_image: previous?.hero_image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1600&q=80", primary_color: form.primary_color, minimum_order: previous?.minimum_order || 25, estimated_delivery_time: previous?.estimated_delivery_time || "35-45 min", is_open: previous?.is_open ?? true, delivery_enabled: previous?.delivery_enabled ?? true, pickup_enabled: previous?.pickup_enabled ?? true, status: form.status, plan: plan?.name || "Start", is_registration_enabled: form.is_registration_enabled, plan_id: form.plan_id, subscription_status: form.subscription_status, monthly_price: parseMoney(form.monthly_price), due_day: Number(form.due_day), next_due_date: form.next_due_date, last_payment_date: previous?.last_payment_date || "", payment_notes: form.payment_notes, footer_message: previous?.footer_message || "produzido por Startt Facilities", opening_hours: previous?.opening_hours || "Aberto hoje", created_at: previous?.created_at || created, updated_at: created };
+    const company: Company = { id: companyId, name: form.name, slug: form.slug, logo_url: previous?.logo_url || "", banner_url: previous?.banner_url || previous?.hero_image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1600&q=80", whatsapp: form.whatsapp, address: form.address, hero_image: previous?.hero_image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1600&q=80", primary_color: form.primary_color, minimum_order: previous?.minimum_order || 25, estimated_delivery_time: previous?.estimated_delivery_time || "35-45 min", is_open: previous?.is_open ?? true, delivery_enabled: previous?.delivery_enabled ?? true, pickup_enabled: previous?.pickup_enabled ?? true, status: form.status, plan: plan?.name || "Start", is_registration_enabled: form.is_registration_enabled, plan_id: form.plan_id, subscription_status: form.subscription_status, monthly_price: parseMoney(form.monthly_price), due_day: Number(form.due_day), next_due_date: form.next_due_date, last_payment_date: previous?.last_payment_date || "", payment_notes: form.payment_notes, assistant_enabled: previous?.assistant_enabled ?? false, assistant_status: previous?.assistant_status || "inactive", assistant_trial_until: previous?.assistant_trial_until || "", assistant_notes: previous?.assistant_notes || "", assistant_plan: previous?.assistant_plan || "mvp", footer_message: previous?.footer_message || "produzido por Startt Facilities", opening_hours: previous?.opening_hours || "Aberto hoje", created_at: previous?.created_at || created, updated_at: created };
     setDbState((current) => ({ ...current, companies: form.id ? current.companies.map((item) => item.id === form.id ? company : item) : [company, ...current.companies], settings: form.id ? current.settings : [{ id: id("set"), company_id: companyId, critical_locked: false, pix_enabled: false, pix_key: "" }, ...current.settings], print_settings: form.id ? current.print_settings : [{ company_id: companyId, auto_print_orders: false, auto_print_cash_sales: false, printer_name: "", paper_width: "80mm", copies: 1, footer_text: "Startt Delivery — produzido por Startt Facilities" }, ...current.print_settings], users: !form.id && form.admin_email ? [{ id: id("usr"), company_id: companyId, name: "Admin inicial", email: form.admin_email, password: form.admin_password, role: "dono", is_active: true, created_at: created }, ...current.users] : current.users }));
     setFormOpen(false);
     notify("success", form.id ? "Empresa atualizada com sucesso." : "Empresa criada com sucesso.");

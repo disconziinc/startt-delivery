@@ -106,6 +106,11 @@ function withDefaults(parsed: Partial<MockDatabaseState> = {}): MockDatabaseStat
       next_due_date: company.next_due_date || "2026-05-10",
       last_payment_date: company.last_payment_date || "",
       payment_notes: fixMojibake(company.payment_notes || ""),
+      assistant_enabled: company.assistant_enabled ?? false,
+      assistant_status: company.assistant_status || "inactive",
+      assistant_trial_until: company.assistant_trial_until || "",
+      assistant_notes: fixMojibake(company.assistant_notes || ""),
+      assistant_plan: company.assistant_plan || "mvp",
       address: fixMojibake(company.address || ""),
       updated_at: company.updated_at || company.created_at || new Date().toISOString(),
     };
@@ -263,6 +268,22 @@ async function syncTable(table: TableName, rows: unknown[], key: "id" | "company
     if (error && table === "categories" && /emoji/i.test(error.message)) {
       const fallbackRows = sanitizedRows.map((row) => {
         const { emoji: _emoji, ...rest } = row as Record<string, unknown>;
+        return rest;
+      });
+      const { error: retryError } = await client.from(table).upsert(fallbackRows as never, { onConflict: key });
+      if (retryError) throw retryError;
+      return;
+    }
+    if (error && table === "companies" && /assistant_/i.test(error.message)) {
+      const fallbackRows = sanitizedRows.map((row) => {
+        const {
+          assistant_enabled: _assistant_enabled,
+          assistant_status: _assistant_status,
+          assistant_trial_until: _assistant_trial_until,
+          assistant_notes: _assistant_notes,
+          assistant_plan: _assistant_plan,
+          ...rest
+        } = row as Record<string, unknown>;
         return rest;
       });
       const { error: retryError } = await client.from(table).upsert(fallbackRows as never, { onConflict: key });

@@ -2,6 +2,7 @@
 
 export type CompanyStatus = "trial" | "active" | "blocked" | "canceled" | "disabled";
 export type SubscriptionStatus = "trialing" | "active" | "overdue" | "canceled";
+export type AssistantStatus = "inactive" | "active" | "trial" | "blocked";
 export type UserRole = "dono" | "gerente" | "caixa" | "atendente";
 export type MasterRole = "master";
 export type CouponType = "percentual" | "fixo";
@@ -41,6 +42,11 @@ export type Company = {
   next_due_date: string;
   last_payment_date: string;
   payment_notes: string;
+  assistant_enabled?: boolean;
+  assistant_status?: AssistantStatus;
+  assistant_trial_until?: string;
+  assistant_notes?: string;
+  assistant_plan?: string;
   footer_message: string;
   opening_hours: string;
   created_at: string;
@@ -360,6 +366,11 @@ export const initialMockDatabase: MockDatabaseState = {
       next_due_date: "2026-05-10",
       last_payment_date: "2026-04-10",
       payment_notes: "Pagamento em dia.",
+      assistant_enabled: true,
+      assistant_status: "trial",
+      assistant_trial_until: "2026-06-30T23:59:59.000Z",
+      assistant_notes: "Teste liberado para demonstracao.",
+      assistant_plan: "mvp",
       footer_message: "produzido por Startt Facilities",
       opening_hours: "Aberto hoje, 10:30 às 22:30",
       created_at: "2026-01-10T10:00:00.000Z",
