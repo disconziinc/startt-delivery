@@ -82,24 +82,36 @@ const timestampFields = new Set([
   "inventory_items.updated_at",
 ]);
 
+const requiredTimestampFields = new Set([...timestampFields].filter((field) => !nullableDateFields.has(field)));
+
 const frontendOnlyFields: Partial<Record<TableName, string[]>> = {
   orders: ["removedFromDashboard"],
 };
 
 function toSupabaseRow<T>(table: TableName, row: T): T {
   const cleaned: Record<string, unknown> = {};
+  const now = new Date().toISOString();
   for (const [key, value] of Object.entries(row as Record<string, unknown>)) {
     if (frontendOnlyFields[table]?.includes(key)) continue;
     if (value === undefined) continue;
-    cleaned[key] = timestampFields.has(`${table}.${key}`) && value === "" ? null : value;
+    const field = `${table}.${key}`;
+    if (requiredTimestampFields.has(field) && (value === "" || value === null)) {
+      cleaned[key] = now;
+      continue;
+    }
+    cleaned[key] = nullableDateFields.has(field) && value === "" ? null : value;
   }
   if (table === "users") {
     const userRow = row as Record<string, unknown>;
     const isActive = typeof userRow.is_active === "boolean" ? userRow.is_active : typeof userRow.active === "boolean" ? userRow.active : true;
     const assistantRole = typeof userRow.assistant_role === "string" && userRow.assistant_role.trim() ? userRow.assistant_role : "operator";
+    const createdAt = typeof userRow.created_at === "string" && userRow.created_at ? userRow.created_at : now;
+    const updatedAt = typeof userRow.updated_at === "string" && userRow.updated_at ? userRow.updated_at : createdAt;
     cleaned.is_active = isActive;
     cleaned.active = isActive;
     cleaned.assistant_role = assistantRole;
+    cleaned.created_at = createdAt;
+    cleaned.updated_at = updatedAt;
   }
   return cleaned as T;
 }
@@ -196,9 +208,12 @@ function withDefaults(parsed: Partial<MockDatabaseState> = {}): MockDatabaseStat
   });
   const users = (parsed.users || initialMockDatabase.users).map((user) => {
     const row = user as User & { active?: boolean };
+    const createdAt = row.created_at || new Date().toISOString();
     return {
       ...user,
       is_active: row.is_active ?? row.active ?? true,
+      created_at: createdAt,
+      updated_at: (row as User & { updated_at?: string }).updated_at || createdAt,
     };
   });
   const parsedDeliveryZones = (parsed.delivery_zones || []).map((zone) => ({ ...zone, neighborhood: fixMojibake(zone.neighborhood) }));
