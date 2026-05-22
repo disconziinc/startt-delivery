@@ -93,6 +93,12 @@ function toSupabaseRow<T>(table: TableName, row: T): T {
     if (value === undefined) continue;
     cleaned[key] = timestampFields.has(`${table}.${key}`) && value === "" ? null : value;
   }
+  if (table === "users") {
+    const userRow = row as Record<string, unknown>;
+    const isActive = typeof userRow.is_active === "boolean" ? userRow.is_active : typeof userRow.active === "boolean" ? userRow.active : true;
+    cleaned.is_active = isActive;
+    cleaned.active = isActive;
+  }
   return cleaned as T;
 }
 
@@ -186,6 +192,13 @@ function withDefaults(parsed: Partial<MockDatabaseState> = {}): MockDatabaseStat
       is_active: user.is_active ?? true,
     };
   });
+  const users = (parsed.users || initialMockDatabase.users).map((user) => {
+    const row = user as User & { active?: boolean };
+    return {
+      ...user,
+      is_active: row.is_active ?? row.active ?? true,
+    };
+  });
   const parsedDeliveryZones = (parsed.delivery_zones || []).map((zone) => ({ ...zone, neighborhood: fixMojibake(zone.neighborhood) }));
   const delivery_zones = [
     ...parsedDeliveryZones,
@@ -238,7 +251,7 @@ function withDefaults(parsed: Partial<MockDatabaseState> = {}): MockDatabaseStat
     updated_at: brand.updated_at || brand.created_at || new Date().toISOString(),
   }));
 
-  return { ...initialMockDatabase, ...parsed, plans, companies, products, categories, master_users, delivery_zones, customers, orders, settings, voucher_brands };
+  return { ...initialMockDatabase, ...parsed, plans, companies, products, categories, master_users, users, delivery_zones, customers, orders, settings, voucher_brands };
 }
 
 function readFallbackSnapshot(): MockDatabaseState {
