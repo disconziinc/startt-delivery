@@ -56,9 +56,30 @@ type SnapshotKey = keyof MockDatabaseState;
 const nullableDateFields = new Set([
   "companies.next_due_date",
   "companies.last_payment_date",
+  "companies.assistant_trial_until",
+  "settings.assistant_trial_until",
   "customers.last_order_at",
   "coupons.expires_at",
   "orders.archived_at",
+]);
+
+const timestampFields = new Set([
+  ...nullableDateFields,
+  "companies.created_at",
+  "companies.updated_at",
+  "users.created_at",
+  "users.updated_at",
+  "customers.created_at",
+  "customers.updated_at",
+  "voucher_brands.created_at",
+  "voucher_brands.updated_at",
+  "settings.created_at",
+  "settings.updated_at",
+  "orders.created_at",
+  "cash_sales.created_at",
+  "reports.created_at",
+  "inventory_items.created_at",
+  "inventory_items.updated_at",
 ]);
 
 const frontendOnlyFields: Partial<Record<TableName, string[]>> = {
@@ -70,9 +91,39 @@ function toSupabaseRow<T>(table: TableName, row: T): T {
   for (const [key, value] of Object.entries(row as Record<string, unknown>)) {
     if (frontendOnlyFields[table]?.includes(key)) continue;
     if (value === undefined) continue;
-    cleaned[key] = nullableDateFields.has(`${table}.${key}`) && value === "" ? null : value;
+    cleaned[key] = timestampFields.has(`${table}.${key}`) && value === "" ? null : value;
   }
   return cleaned as T;
+}
+
+function supabaseErrorMessage(error: unknown) {
+  if (!error) return "Erro desconhecido";
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && "message" in error) return String((error as { message?: unknown }).message || "Erro desconhecido");
+  return String(error);
+}
+
+function emptyTimestampFields(table: TableName, payload: unknown) {
+  const rows = Array.isArray(payload) ? payload : [payload];
+  const fields = new Set<string>();
+  for (const row of rows) {
+    for (const [key, value] of Object.entries(row as Record<string, unknown>)) {
+      if (timestampFields.has(`${table}.${key}`) && value === "") fields.add(key);
+    }
+  }
+  return [...fields];
+}
+
+function withSupabaseContext(table: TableName, stage: string, error: unknown, payload?: unknown) {
+  const emptyFields = payload ? emptyTimestampFields(table, payload) : [];
+  const message = [
+    `Falha no Supabase durante ${stage}`,
+    `tabela=${table}`,
+    emptyFields.length ? `campos_timestamp_vazios=${emptyFields.join(",")}` : "",
+    `erro=${supabaseErrorMessage(error)}`,
+  ].filter(Boolean).join(" | ");
+  console.error(message, { table, stage, emptyTimestampFields: emptyFields, payload, error });
+  return Object.assign(new Error(message), { table, stage, emptyTimestampFields: emptyFields, originalError: error });
 }
 
 function fixMojibake(value = "") {
@@ -240,16 +291,18 @@ async function selectOptionalAll<T>(table: TableName): Promise<T[]> {
 async function insertRow<T>(table: TableName, row: T): Promise<T> {
   if (!isSupabaseConfigured) return row;
   const client = requireSupabase();
-  const { data, error } = await client.from(table).insert(toSupabaseRow(table, row) as never).select("*").single();
-  if (error) throw error;
+  const payload = toSupabaseRow(table, row);
+  const { data, error } = await client.from(table).insert(payload as never).select("*").single();
+  if (error) throw withSupabaseContext(table, "insert", error, payload);
   return data as T;
 }
 
 async function updateRow<T extends { id: string }>(table: TableName, row: T): Promise<T> {
   if (!isSupabaseConfigured) return row;
   const client = requireSupabase();
-  const { data, error } = await client.from(table).update(toSupabaseRow(table, row) as never).eq("id", row.id).select("*").single();
-  if (error) throw error;
+  const payload = toSupabaseRow(table, row);
+  const { data, error } = await client.from(table).update(payload as never).eq("id", row.id).select("*").single();
+  if (error) throw withSupabaseContext(table, "update", error, payload);
   return data as T;
 }
 
@@ -257,7 +310,7 @@ async function deleteById(table: TableName, id: string) {
   if (!isSupabaseConfigured) return;
   const client = requireSupabase();
   const { error } = await client.from(table).delete().eq("id", id);
-  if (error) throw error;
+  if (error) throw withSupabaseContext(table, "delete", error, { id });
 }
 
 async function syncTable(table: TableName, rows: unknown[], key: "id" | "company_id" = "id") {
@@ -271,7 +324,7 @@ async function syncTable(table: TableName, rows: unknown[], key: "id" | "company
         return rest;
       });
       const { error: retryError } = await client.from(table).upsert(fallbackRows as never, { onConflict: key });
-      if (retryError) throw retryError;
+      if (retryError) throw withSupabaseContext(table, "upsert:retry_without_emoji", retryError, fallbackRows);
       return;
     }
     if (error && table === "companies" && /assistant_/i.test(error.message)) {
@@ -287,11 +340,11 @@ async function syncTable(table: TableName, rows: unknown[], key: "id" | "company
         return rest;
       });
       const { error: retryError } = await client.from(table).upsert(fallbackRows as never, { onConflict: key });
-      if (retryError) throw retryError;
+      if (retryError) throw withSupabaseContext(table, "upsert:retry_without_assistant_fields", retryError, fallbackRows);
       return;
     }
     if (error && table === "inventory_items" && isMissingOptionalInventoryTable(error)) return;
-    if (error) throw error;
+    if (error) throw withSupabaseContext(table, "upsert", error, sanitizedRows);
   }
 }
 

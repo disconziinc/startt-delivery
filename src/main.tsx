@@ -71,6 +71,7 @@ import {
   cacheCompanyRouteSnapshot,
   DATABASE_STORAGE_KEY,
   DATABASE_SYNC_ERROR_EVENT,
+  deleteCompanyCascade,
   getCachedCompanyRouteSnapshot,
   getInitialDatabaseSnapshot,
   loadCompanyRouteSnapshot,
@@ -500,6 +501,13 @@ function runSave(setSaving: (value: boolean) => void, action: () => void, succes
   }, SAVE_DELAY);
 }
 
+function readableError(error: unknown) {
+  if (!error) return "Erro desconhecido.";
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && "message" in error) return String((error as { message?: unknown }).message || "Erro desconhecido.");
+  return String(error);
+}
+
 function cartKey(companyId: string) {
   return `startt_delivery_cart_${companyId}`;
 }
@@ -645,7 +653,7 @@ function App() {
     savingRef.current = true;
     persistDatabaseSnapshot(snapshot)
       .then(() => setDatabaseError(""))
-      .catch(() => setDatabaseError("Falha ao salvar no banco. A alteração não foi confirmada para outros dispositivos. Verifique RLS, colunas e variáveis do Supabase."))
+      .catch((error) => setDatabaseError(`Falha ao salvar no banco: ${readableError(error)}`))
       .finally(() => {
         savingRef.current = false;
         if (pendingSaveRef.current) setSavePulse((value) => value + 1);
@@ -674,8 +682,8 @@ function App() {
     function handleVisibility() {
       if (document.visibilityState === "visible") refreshFromBackend();
     }
-    function handleSyncError() {
-      setDatabaseError("Falha de sincronização com o banco. Confira Supabase/Vercel antes de confiar nesta alteração.");
+    function handleSyncError(event: Event) {
+      setDatabaseError(`Falha de sincronização com o banco: ${readableError((event as CustomEvent).detail)}`);
     }
     window.addEventListener("storage", refreshFromStorage);
     window.addEventListener("focus", refreshFromBackend);
@@ -2489,10 +2497,17 @@ function MasterCompanies({ db, setDbState }: { db: DatabaseApi; setDbState: Reac
     notify("success", "Empresa atualizada.");
   }
 
-  function deleteCompany(company: Company) {
+  async function deleteCompany(company: Company) {
     if (!confirm(`Excluir ${company.name} e TODOS os dados vinculados?`)) return;
-    setDbState((current) => ({ ...current, companies: current.companies.filter((item) => item.id !== company.id), users: current.users.filter((item) => item.company_id !== company.id), categories: current.categories.filter((item) => item.company_id !== company.id), products: current.products.filter((item) => item.company_id !== company.id), orders: current.orders.filter((item) => item.company_id !== company.id), order_items: current.order_items.filter((item) => item.company_id !== company.id), customers: current.customers.filter((item) => item.company_id !== company.id), voucher_brands: current.voucher_brands.filter((item) => item.company_id !== company.id), delivery_zones: current.delivery_zones.filter((item) => item.company_id !== company.id), coupons: current.coupons.filter((item) => item.company_id !== company.id), settings: current.settings.filter((item) => item.company_id !== company.id), cash_sales: current.cash_sales.filter((item) => item.company_id !== company.id), print_settings: current.print_settings.filter((item) => item.company_id !== company.id), reports: current.reports.filter((item) => item.company_id !== company.id), inventory_items: current.inventory_items.filter((item) => item.company_id !== company.id) }));
-    notify("success", "Empresa e dados vinculados foram excluídos.");
+    try {
+      await deleteCompanyCascade(company.id);
+      setDbState((current) => ({ ...current, companies: current.companies.filter((item) => item.id !== company.id), users: current.users.filter((item) => item.company_id !== company.id), categories: current.categories.filter((item) => item.company_id !== company.id), products: current.products.filter((item) => item.company_id !== company.id), orders: current.orders.filter((item) => item.company_id !== company.id), order_items: current.order_items.filter((item) => item.company_id !== company.id), customers: current.customers.filter((item) => item.company_id !== company.id), voucher_brands: current.voucher_brands.filter((item) => item.company_id !== company.id), delivery_zones: current.delivery_zones.filter((item) => item.company_id !== company.id), coupons: current.coupons.filter((item) => item.company_id !== company.id), settings: current.settings.filter((item) => item.company_id !== company.id), cash_sales: current.cash_sales.filter((item) => item.company_id !== company.id), print_settings: current.print_settings.filter((item) => item.company_id !== company.id), reports: current.reports.filter((item) => item.company_id !== company.id), inventory_items: current.inventory_items.filter((item) => item.company_id !== company.id) }));
+      notify("success", "Empresa e dados vinculados foram excluídos.");
+    } catch (error) {
+      const message = readableError(error);
+      console.error("Falha ao excluir empresa no Supabase.", { companyId: company.id, companyName: company.name, error });
+      notify("error", `Empresa não foi excluída: ${message}`);
+    }
   }
 
   return (
