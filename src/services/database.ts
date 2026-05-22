@@ -150,7 +150,7 @@ function normalizedNeighborhood(value: string) {
 function withDefaults(parsed: Partial<MockDatabaseState> = {}): MockDatabaseState {
   const plans = parsed.plans?.length ? parsed.plans : initialMockDatabase.plans;
   const companies = (parsed.companies || initialMockDatabase.companies).map((company) => {
-    const legacyStarter = company.plan === "Starter" || company.plan === "Start" || company.status === "trial";
+    const legacyStarter = !company.plan_id && (company.plan === "Starter" || company.plan === "Start" || company.status === "trial");
     const fallbackPlan = legacyStarter
       ? plans.find((plan) => plan.id === "plan_start")
       : plans.find((plan) => plan.name === company.plan) || plans.find((plan) => plan.id === "plan_pro") || plans[0];
