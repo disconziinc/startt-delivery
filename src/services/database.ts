@@ -61,6 +61,7 @@ const nullableDateFields = new Set([
   "customers.last_order_at",
   "coupons.expires_at",
   "orders.archived_at",
+  "orders.qz_printed_at",
 ]);
 
 const timestampFields = new Set([
@@ -253,6 +254,9 @@ function withDefaults(parsed: Partial<MockDatabaseState> = {}): MockDatabaseStat
     archived: order.archived ?? false,
     archived_at: order.archived_at || "",
     removed_from_dashboard: order.removed_from_dashboard ?? order.removedFromDashboard ?? false,
+    qz_printed_at: order.qz_printed_at || "",
+    qz_print_attempts: order.qz_print_attempts ?? 0,
+    qz_print_error: fixMojibake(order.qz_print_error || ""),
   }));
   const settings = (parsed.settings || initialMockDatabase.settings).map((setting) => ({
     ...setting,

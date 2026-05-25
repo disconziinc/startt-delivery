@@ -117,11 +117,11 @@ insert into cash_sales (id, company_id, items, subtotal, discount, total, paymen
 ('cash_dog_1', 'cmp_dogexpress', '[{"product_id":"prd_dog_1","name":"Dog Startt Classico","quantity":1,"unit_price":22.9,"total":22.9}]', 22.90, 0, 22.90, 'Dinheiro', 'usr_dog_cash', '2026-04-26T12:00:00.000Z')
 on conflict (id) do update set items = excluded.items, subtotal = excluded.subtotal, discount = excluded.discount, total = excluded.total, payment_method = excluded.payment_method;
 
-insert into print_settings (company_id, auto_print_orders, auto_print_cash_sales, printer_name, paper_width, copies, footer_text) values
-('cmp_dogexpress', false, false, 'Balcao', '80mm', 1, 'Startt Delivery - produzido por Startt Facilities'),
-('cmp_pizzariajoao', true, true, 'Cozinha', '80mm', 2, 'Obrigado pela preferencia'),
-('cmp_burguerpaulo', true, false, 'Caixa', '58mm', 1, 'Volte sempre')
-on conflict (company_id) do update set auto_print_orders = excluded.auto_print_orders, auto_print_cash_sales = excluded.auto_print_cash_sales, printer_name = excluded.printer_name, paper_width = excluded.paper_width, copies = excluded.copies, footer_text = excluded.footer_text;
+insert into print_settings (company_id, auto_print_orders, auto_print_cash_sales, printer_name, qz_tray_enabled, qz_printer_name, paper_width, copies, footer_text) values
+('cmp_dogexpress', false, false, 'Balcao', false, '', '80mm', 1, 'Startt Delivery - produzido por Startt Facilities'),
+('cmp_pizzariajoao', true, true, 'Cozinha', false, '', '80mm', 2, 'Obrigado pela preferencia'),
+('cmp_burguerpaulo', true, false, 'Caixa', false, '', '58mm', 1, 'Volte sempre')
+on conflict (company_id) do update set auto_print_orders = excluded.auto_print_orders, auto_print_cash_sales = excluded.auto_print_cash_sales, printer_name = excluded.printer_name, qz_tray_enabled = excluded.qz_tray_enabled, qz_printer_name = excluded.qz_printer_name, paper_width = excluded.paper_width, copies = excluded.copies, footer_text = excluded.footer_text;
 
 insert into reports (id, company_id, name, type, created_at) values
 ('rep_dog_1', 'cmp_dogexpress', 'Resumo diario', 'all', '2026-04-26T12:00:00.000Z')

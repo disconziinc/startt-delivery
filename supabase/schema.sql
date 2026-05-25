@@ -265,6 +265,8 @@ create table if not exists print_settings (
   auto_print_orders boolean not null default false,
   auto_print_cash_sales boolean not null default false,
   printer_name text not null default '',
+  qz_tray_enabled boolean not null default false,
+  qz_printer_name text not null default '',
   paper_width text not null default '80mm' check (paper_width in ('58mm', '80mm')),
   copies integer not null default 1,
   footer_text text not null default 'Startt Delivery - produzido por Startt Facilities'
@@ -302,6 +304,11 @@ alter table orders add column if not exists customer_note text;
 alter table orders add column if not exists archived boolean not null default false;
 alter table orders add column if not exists archived_at timestamptz;
 alter table orders add column if not exists removed_from_dashboard boolean not null default false;
+alter table orders add column if not exists qz_printed_at timestamptz;
+alter table orders add column if not exists qz_print_attempts integer not null default 0;
+alter table orders add column if not exists qz_print_error text not null default '';
+alter table print_settings add column if not exists qz_tray_enabled boolean not null default false;
+alter table print_settings add column if not exists qz_printer_name text not null default '';
 alter table settings add column if not exists pix_enabled boolean not null default false;
 alter table settings add column if not exists pix_key text not null default '';
 alter table settings add column if not exists pix_receiver_name text not null default '';

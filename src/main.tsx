@@ -80,6 +80,18 @@ import {
   uploadPublicImage,
 } from "./services/database";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
+import {
+  connectQzTray,
+  disconnectQzTray,
+  getQzDownloadUrl,
+  getQzStatus,
+  getSavedQzPrinter,
+  listQzPrinters,
+  printQzOrder,
+  printQzTest,
+  qzInstallInstructions,
+  saveQzPrinter,
+} from "./services/qzTrayService";
 import "./index.css";
 
 type DatabaseApi = ReturnType<typeof createDatabaseApi>;
@@ -1114,7 +1126,7 @@ function PublicMenu({ db, setDbState, company, checkoutOnly = false }: { db: Dat
       created_at: createdAt,
     }).join(" | ");
     const finalPixQrCode = checkout.payment_method === "Pix" && !pixQrCode ? await QRCode.toDataURL(pixPayload, { margin: 1, width: 240, errorCorrectionLevel: "M" }) : pixQrCode;
-    const order: Order = { id: orderId, order_number: orderNumber, company_id: company.id, customer_id: customerId, customer_name: checkout.name.trim(), customer_phone: checkout.phone.trim(), normalized_phone: normalizedPhone, customer_address: fullAddress, status: "novo", fulfillment, delivery_zone_id: fulfillment === "delivery" ? zoneId : undefined, subtotal, discount, delivery_fee: deliveryFee, total, payment_method: checkout.payment_method, payment_details: paymentDetails, payment_status: checkout.payment_method === "Pix" ? "Aguardando comprovante" : undefined, pix_txid: checkout.payment_method === "Pix" ? pixTxid : undefined, pix_payload: checkout.payment_method === "Pix" ? pixPayload : undefined, pix_qr_code: checkout.payment_method === "Pix" ? finalPixQrCode : undefined, cash_change_for: cashChangeFor, calculated_change: calculatedChange, change_for: cashChangeFor, change_amount: calculatedChange, card_type: checkout.payment_method === "Cartão" ? checkout.card_type : undefined, voucher_brand: checkout.payment_method === "Vale alimentação/refeição" ? voucherBrand?.name : undefined, voucher_fee_percentage: checkout.payment_method === "Vale alimentação/refeição" ? voucherBrand?.fee_percentage : undefined, customer_note: checkout.customer_note, archived: false, removed_from_dashboard: false, created_at: createdAt };
+    const order: Order = { id: orderId, order_number: orderNumber, company_id: company.id, customer_id: customerId, customer_name: checkout.name.trim(), customer_phone: checkout.phone.trim(), normalized_phone: normalizedPhone, customer_address: fullAddress, status: "novo", fulfillment, delivery_zone_id: fulfillment === "delivery" ? zoneId : undefined, subtotal, discount, delivery_fee: deliveryFee, total, payment_method: checkout.payment_method, payment_details: paymentDetails, payment_status: checkout.payment_method === "Pix" ? "Aguardando comprovante" : undefined, pix_txid: checkout.payment_method === "Pix" ? pixTxid : undefined, pix_payload: checkout.payment_method === "Pix" ? pixPayload : undefined, pix_qr_code: checkout.payment_method === "Pix" ? finalPixQrCode : undefined, cash_change_for: cashChangeFor, calculated_change: calculatedChange, change_for: cashChangeFor, change_amount: calculatedChange, card_type: checkout.payment_method === "Cartão" ? checkout.card_type : undefined, voucher_brand: checkout.payment_method === "Vale alimentação/refeição" ? voucherBrand?.name : undefined, voucher_fee_percentage: checkout.payment_method === "Vale alimentação/refeição" ? voucherBrand?.fee_percentage : undefined, customer_note: checkout.customer_note, archived: false, removed_from_dashboard: false, qz_printed_at: "", qz_print_attempts: 0, qz_print_error: "", created_at: createdAt };
     const orderItems: OrderItem[] = cart.map((item) => ({ id: id("oit"), company_id: company.id, order_id: orderId, product_id: item.id, name: item.name, quantity: item.qty, unit_price: item.price, total: item.qty * item.price }));
     setDbState((current) => {
       const customerInState = findCustomerByPhone(current.customers, company.id, normalizedPhone);
@@ -1387,13 +1399,38 @@ function CompanyAdmin({ db, setDbState, company, screen, login }: { db: Database
   const allowed = user ? roleAccess[user.role] : [];
   const activeScreen = allowed.includes(screen) ? screen : allowed[0] || "dashboard";
 
-  function printThermalOrder(order: Order, auto = false) {
+  function markQzPrinted(orderId: string, error = "") {
+    setDbState((current) => ({
+      ...current,
+      orders: current.orders.map((item) => {
+        if (item.id !== orderId || item.company_id !== company.id) return item;
+        return {
+          ...item,
+          qz_printed_at: error ? item.qz_printed_at || "" : new Date().toISOString(),
+          qz_print_attempts: (item.qz_print_attempts || 0) + 1,
+          qz_print_error: error,
+        };
+      }),
+    }));
+  }
+
+  async function printThermalOrder(order: Order, auto = false) {
     try {
       const resolved = resolveOrderForPrint(order, bundle);
+      const printSettings = bundle.print_settings;
+      const qzPrinter = printSettings?.qz_printer_name || printSettings?.printer_name || "";
+      if (printSettings?.qz_tray_enabled && qzPrinter) {
+        await printQzOrder(qzPrinter, { company, order: resolved.order, items: resolved.items, settings: printSettings });
+        markQzPrinted(order.id);
+        notify("success", auto ? "Pedido impresso automaticamente pelo QZ Tray." : "Pedido enviado ao QZ Tray.");
+        return;
+      }
       const opened = openThermalPrintable(`Pedido #${displayOrderNumber(order)}`, buildThermalOrderHtml(company, resolved.order, resolved.items));
-      if (!opened && auto) notify("info", "Impressão automática bloqueada. Use o botão Imprimir nota térmica.");
-    } catch {
-      notify("error", "Não foi possível preparar a nota térmica. O pedido continua salvo.");
+      if (!opened && auto) notify("info", "Impressão automática bloqueada. Use o botão Reimprimir.");
+    } catch (error) {
+      const message = readableError(error);
+      if (auto) markQzPrinted(order.id, message);
+      notify("error", `${message} O pedido continua salvo.`);
     }
   }
 
@@ -1401,7 +1438,7 @@ function CompanyAdmin({ db, setDbState, company, screen, login }: { db: Database
     setNewOrderBadge((count) => count + 1);
     setNewOrderFlash(true);
     notify("info", "Novo pedido recebido.");
-    if (order && bundle.print_settings?.auto_print_orders && !printedOrderIds.current.has(order.id)) {
+    if (order && bundle.print_settings?.auto_print_orders && !order.qz_printed_at && !(order.qz_print_attempts || 0) && !printedOrderIds.current.has(order.id)) {
       printedOrderIds.current.add(order.id);
       printThermalOrder(order, true);
     }
@@ -1531,7 +1568,7 @@ function CompanyAdmin({ db, setDbState, company, screen, login }: { db: Database
   );
 }
 
-function AdminContent({ screen, db, setDbState, company, user, printThermalOrder }: { screen: AdminScreen; db: DatabaseApi; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>>; company: Company; user: User; printThermalOrder: (order: Order, auto?: boolean) => void }) {
+function AdminContent({ screen, db, setDbState, company, user, printThermalOrder }: { screen: AdminScreen; db: DatabaseApi; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>>; company: Company; user: User; printThermalOrder: (order: Order, auto?: boolean) => Promise<void> }) {
   const bundle = db.getCompanyBundle(company.id);
   const plan = bundle.plan;
   if (screen === "relatorios" && plan && !plan.allow_reports) return <PlanBlocked />;
@@ -1548,7 +1585,7 @@ function AdminContent({ screen, db, setDbState, company, user, printThermalOrder
   if (screen === "cupons") return <CouponsManager company={company} coupons={bundle.coupons} plan={plan} setDbState={setDbState} />;
   if (screen === "relatorios") return <Reports company={company} bundle={bundle} />;
   if (screen === "fretes") return <ZonesManager company={company} zones={bundle.delivery_zones} setDbState={setDbState} />;
-  if (screen === "impressao") return <PrintManager company={company} settings={bundle.print_settings} setDbState={setDbState} />;
+  if (screen === "impressao") return <PrintManager company={company} user={user} settings={bundle.print_settings} setDbState={setDbState} />;
   if (screen === "configuracoes") return <CompanySettings company={company} voucherBrands={bundle.voucher_brands} settings={bundle.settings} printSettings={bundle.print_settings} setDbState={setDbState} />;
   return <UsersManager company={company} users={bundle.users} plan={plan} setDbState={setDbState} />;
 }
@@ -1954,7 +1991,7 @@ function InventoryManager({ company, items, setDbState }: { company: Company; it
 
 const orderStatuses: OrderStatus[] = ["novo", "aceito", "preparando", "saiu_para_entrega", "pronto_para_retirada", "concluido", "cancelado"];
 
-function OrdersManager({ bundle, setDbState, company, user, printThermalOrder }: { bundle: ReturnType<DatabaseApi["getCompanyBundle"]>; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>>; company: Company; user: User; printThermalOrder: (order: Order) => void }) {
+function OrdersManager({ bundle, setDbState, company, user, printThermalOrder }: { bundle: ReturnType<DatabaseApi["getCompanyBundle"]>; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>>; company: Company; user: User; printThermalOrder: (order: Order) => Promise<void> }) {
   const [status, setStatus] = useState("todos");
   const [search, setSearch] = useState("");
   const [date, setDate] = useState("");
@@ -1978,7 +2015,7 @@ function OrdersManager({ bundle, setDbState, company, user, printThermalOrder }:
   return (
     <CrudShell title="Pedidos" description="Pedidos recebidos do cardápio online.">
       <div className="grid gap-3 md:grid-cols-3"><Input placeholder="Buscar cliente" value={search} onChange={setSearch} /><Input placeholder="" type="date" value={date} onChange={setDate} /><Select value={status} onChange={setStatus}><option value="todos">Todos</option>{orderStatuses.map((item) => <option key={item}>{item}</option>)}</Select></div>
-      <Table headers={["Pedido", "Cliente", "Pagamento", "Status", "Total", "Ações"]} rows={rows.map((order) => [`#${displayOrderNumber(order)}`, order.customer_name || customerName(order.customer_id, bundle.customers), order.payment_details || order.payment_method, order.status, money(order.total), <div className="flex flex-wrap gap-2" key={order.id}><Select value={order.status} onChange={(value) => update(order, value as OrderStatus)}>{orderStatuses.map((item) => <option key={item}>{item}</option>)}</Select><button className="rounded-lg border px-3 py-2 font-bold" onClick={() => printOrder(company, order, bundle)}>Ver pedido</button><button className="rounded-lg bg-startt-green px-3 py-2 font-bold text-white shadow-lg shadow-startt-green/20" onClick={() => printThermalOrder(order)}>Imprimir nota térmica</button><button className="rounded-lg border px-3 py-2 font-bold" onClick={() => sendOrderUpdate(order, company, bundle)}>Enviar WhatsApp</button>{["dono", "gerente"].includes(user.role) && <button className="rounded-lg bg-startt-ink px-3 py-2 font-bold text-white" onClick={() => archive(order)}>Arquivar pedido</button>}</div>])} />
+      <Table headers={["Pedido", "Cliente", "Pagamento", "Status", "Impressão", "Total", "Ações"]} rows={rows.map((order) => [`#${displayOrderNumber(order)}`, order.customer_name || customerName(order.customer_id, bundle.customers), order.payment_details || order.payment_method, order.status, order.qz_printed_at ? "Impresso" : order.qz_print_error ? "Falhou" : "Pendente", money(order.total), <div className="flex flex-wrap gap-2" key={order.id}><Select value={order.status} onChange={(value) => update(order, value as OrderStatus)}>{orderStatuses.map((item) => <option key={item}>{item}</option>)}</Select><button className="rounded-lg border px-3 py-2 font-bold" onClick={() => printOrder(company, order, bundle)}>Ver pedido</button><button className="rounded-lg bg-startt-green px-3 py-2 font-bold text-white shadow-lg shadow-startt-green/20" onClick={() => printThermalOrder(order)}>Reimprimir</button><button className="rounded-lg border px-3 py-2 font-bold" onClick={() => sendOrderUpdate(order, company, bundle)}>Enviar WhatsApp</button>{["dono", "gerente"].includes(user.role) && <button className="rounded-lg bg-startt-ink px-3 py-2 font-bold text-white" onClick={() => archive(order)}>Arquivar pedido</button>}</div>])} />
     </CrudShell>
   );
 }
@@ -2222,11 +2259,73 @@ function ZonesManager({ company, zones, setDbState }: { company: Company; zones:
   return <CrudShell title="Fretes" description="Bairros ativos aparecem no checkout público e aplicam frete automaticamente."><div className="grid gap-3 rounded-lg border border-black/10 bg-white p-4 md:grid-cols-4"><Input placeholder="Bairro" value={form.neighborhood} onChange={(value) => setForm({ ...form, neighborhood: value })} /><Input placeholder="Valor do frete" value={form.fee} onChange={(value) => setForm({ ...form, fee: value })} /><Input placeholder="Tempo estimado" value={form.estimated_minutes} onChange={(value) => setForm({ ...form, estimated_minutes: value })} /><button onClick={add} className="rounded-lg bg-startt-green px-4 font-black text-white">Cadastrar</button></div><Table headers={["Bairro", "Frete", "Tempo", "Status", "Ações"]} rows={zones.map((zone) => [zone.neighborhood, money(zone.fee), zone.estimated_minutes, zone.active ? "Ativo" : "Inativo", <button key={zone.id} className="rounded-lg border px-3 py-2 font-bold" onClick={() => setDbState((current) => ({ ...current, delivery_zones: current.delivery_zones.map((item) => item.id === zone.id && item.company_id === company.id ? { ...item, active: !item.active } : item) }))}>Ativar/desativar</button>])} /></CrudShell>;
 }
 
-function PrintManager({ company, settings, setDbState }: { company: Company; settings?: PrintSettings; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
-  const fallback: PrintSettings = { company_id: company.id, auto_print_orders: false, auto_print_cash_sales: false, printer_name: "", paper_width: "80mm", copies: 1, footer_text: "Startt Delivery — produzido por Startt Facilities" };
-  const [form, setForm] = useState(settings || fallback);
-  function save() { setDbState((current) => ({ ...current, print_settings: current.print_settings.some((item) => item.company_id === company.id) ? current.print_settings.map((item) => item.company_id === company.id ? form : item) : [...current.print_settings, form] })); }
-  return <CrudShell title="Impressão" description="Configure a impressão por navegador. O modo automático tenta abrir a janela da nota térmica ao receber novos pedidos."><div className="grid gap-3 rounded-lg border border-black/10 bg-white p-4 md:grid-cols-2"><label className="flex gap-2 font-bold"><input type="checkbox" checked={form.auto_print_orders} onChange={(e) => setForm({ ...form, auto_print_orders: e.target.checked, paper_width: "80mm" })} /> Imprimir pedidos automaticamente</label><label className="flex gap-2 font-bold"><input type="checkbox" checked={form.auto_print_cash_sales} onChange={(e) => setForm({ ...form, auto_print_cash_sales: e.target.checked })} /> Imprimir vendas do caixa</label><Input placeholder="Nome da impressora" value={form.printer_name} onChange={(value) => setForm({ ...form, printer_name: value })} /><Select value={form.paper_width} onChange={(value) => setForm({ ...form, paper_width: value as "58mm" | "80mm" })}><option>58mm</option><option>80mm</option></Select><Input placeholder="Quantidade de vias" value={String(form.copies)} onChange={(value) => setForm({ ...form, copies: Number(value) || 1 })} /><Input placeholder="Rodapé" value={form.footer_text} onChange={(value) => setForm({ ...form, footer_text: value })} /><button onClick={save} className="rounded-lg bg-startt-green px-4 py-3 font-black text-white">Salvar configuração</button><button onClick={() => openThermalPrintable("Teste térmico 80mm", `<main class="thermal-receipt"><section class="center"><strong class="store">${htmlEscape(company.name)}</strong><div>Teste de impressão 80mm</div></section><div class="sep"></div><div class="line"><span>Total</span><span>R$ 0,00</span></div><div class="sep"></div><section class="center"><div>Pedido gerado pelo Startt Delivery</div><div>Produto Startt Facilities</div></section></main>`)} className="rounded-lg border border-black/10 bg-white px-4 py-3 font-black">Testar nota térmica</button></div></CrudShell>;
+function PrintManager({ company, user, settings, setDbState }: { company: Company; user: User; settings?: PrintSettings; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
+  const fallback: PrintSettings = { company_id: company.id, auto_print_orders: false, auto_print_cash_sales: false, printer_name: "", qz_tray_enabled: false, qz_printer_name: getSavedQzPrinter(company.id, user.id), paper_width: "80mm", copies: 1, footer_text: "Startt Delivery — produzido por Startt Facilities" };
+  const [form, setForm] = useState<PrintSettings>({ ...fallback, ...settings, qz_printer_name: settings?.qz_printer_name || settings?.printer_name || fallback.qz_printer_name || "" });
+  const [qzStatus, setQzStatus] = useState(getQzStatus());
+  const [printers, setPrinters] = useState<string[]>(form.qz_printer_name ? [form.qz_printer_name] : []);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  function save(next = form) {
+    const normalized = { ...next, paper_width: "80mm" as const, printer_name: next.printer_name || next.qz_printer_name || "", qz_printer_name: next.qz_printer_name || next.printer_name || "" };
+    saveQzPrinter(company.id, user.id, normalized.qz_printer_name || "");
+    setForm(normalized);
+    setDbState((current) => ({ ...current, print_settings: current.print_settings.some((item) => item.company_id === company.id) ? current.print_settings.map((item) => item.company_id === company.id ? normalized : item) : [...current.print_settings, normalized] }));
+    notify("success", "Configuração de impressão salva.");
+  }
+
+  async function run(success: string, action: () => Promise<void>) {
+    setBusy(true);
+    setMessage("");
+    try {
+      await action();
+      setQzStatus(getQzStatus());
+      setMessage(success);
+      notify("success", success);
+    } catch (error) {
+      const readable = readableError(error);
+      setMessage(readable);
+      notify("error", readable);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <CrudShell title="Impressão" description="Configure o QZ Tray para imprimir pedidos automaticamente na térmica 80mm do Windows 10.">
+      <section className="grid gap-4 rounded-3xl border border-black/10 bg-[#0A0A0A] p-5 text-white shadow-card">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div><h2 className="text-xl font-black">QZ Tray</h2><p className="text-sm text-white/60">Impressão silenciosa via aplicativo local instalado no Windows.</p></div>
+          <span className={`rounded-full px-3 py-1 text-sm font-black ${qzStatus === "connected" ? "bg-emerald-400/15 text-emerald-300" : "bg-[#FF6A00]/15 text-[#FF6A00]"}`}>{qzStatus === "connected" ? "Conectado" : "Desconectado"}</span>
+        </div>
+        <div className="grid gap-3 md:grid-cols-4">
+          <button disabled={busy} onClick={() => run("QZ Tray conectado.", connectQzTray)} className="min-h-12 rounded-xl bg-[#FF6A00] px-4 font-black text-white disabled:opacity-60">Conectar QZ Tray</button>
+          <button disabled={busy} onClick={() => run("QZ Tray desconectado.", disconnectQzTray)} className="min-h-12 rounded-xl border border-white/15 px-4 font-black text-white disabled:opacity-60">Desconectar</button>
+          <button disabled={busy} onClick={() => run("Impressoras atualizadas.", async () => setPrinters(await listQzPrinters()))} className="min-h-12 rounded-xl border border-white/15 px-4 font-black text-white disabled:opacity-60">Buscar impressoras</button>
+          <a href={getQzDownloadUrl()} target="_blank" rel="noreferrer" className="inline-flex min-h-12 items-center justify-center rounded-xl bg-white px-4 font-black text-[#0A0A0A]">Baixar QZ Tray</a>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/76">{qzInstallInstructions()} Em produção, a assinatura deve ser feita por endpoint seguro no servidor. O frontend aceita modo demo/local sem chave privada para testes.</div>
+        {message && <div className="rounded-2xl bg-white/8 p-3 text-sm font-bold text-white/80">{message}</div>}
+      </section>
+      <section className="grid gap-4 rounded-3xl border border-black/10 bg-white p-5 shadow-sm">
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="grid gap-2 text-sm font-bold">Impressora térmica<Select value={form.qz_printer_name || ""} onChange={(value) => setForm({ ...form, qz_printer_name: value, printer_name: value })}><option value="">Selecione uma impressora</option>{printers.map((printer) => <option key={printer} value={printer}>{printer}</option>)}</Select></label>
+          <label className="grid gap-2 text-sm font-bold">Quantidade de vias<Input placeholder="1" value={String(form.copies)} onChange={(value) => setForm({ ...form, copies: Math.max(1, Number(value) || 1) })} /></label>
+          <label className="grid gap-2 text-sm font-bold md:col-span-2">Rodapé<Input placeholder="Mensagem final" value={form.footer_text} onChange={(value) => setForm({ ...form, footer_text: value })} /></label>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="flex min-h-12 items-center gap-3 rounded-2xl bg-startt-paper px-4 font-black"><input type="checkbox" checked={Boolean(form.qz_tray_enabled)} onChange={(event) => setForm({ ...form, qz_tray_enabled: event.target.checked })} /> Usar QZ Tray nesta loja</label>
+          <label className="flex min-h-12 items-center gap-3 rounded-2xl bg-startt-paper px-4 font-black"><input type="checkbox" checked={form.auto_print_orders} onChange={(event) => setForm({ ...form, auto_print_orders: event.target.checked, qz_tray_enabled: event.target.checked ? true : form.qz_tray_enabled })} /> Impressão automática de pedidos</label>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <button onClick={() => save()} className="min-h-12 rounded-xl bg-startt-green px-4 font-black text-white">Salvar impressora</button>
+          <button onClick={() => run("Teste enviado para a impressora.", async () => printQzTest(form.qz_printer_name || form.printer_name || "", company.name))} className="min-h-12 rounded-xl border border-black/10 bg-white px-4 font-black">Imprimir teste QZ</button>
+          <button onClick={() => openThermalPrintable("Teste térmico 80mm", `<main class="thermal-receipt"><section class="center"><strong class="store">${htmlEscape(company.name)}</strong><div>Teste de impressão 80mm</div></section><div class="sep"></div><div class="line"><span>Total</span><span>R$ 0,00</span></div><div class="sep"></div><section class="center"><div>Pedido gerado pelo Startt Delivery</div><div>Produto Startt Facilities</div></section></main>`)} className="min-h-12 rounded-xl border border-black/10 bg-white px-4 font-black">Teste pelo navegador</button>
+        </div>
+      </section>
+    </CrudShell>
+  );
 }
 
 function CompanySettings({ company, voucherBrands, settings, printSettings, setDbState }: { company: Company; voucherBrands: VoucherBrand[]; settings?: CompanySettingsRecord; printSettings?: PrintSettings; setDbState: React.Dispatch<React.SetStateAction<MockDatabaseState>> }) {
@@ -2252,7 +2351,7 @@ function CompanySettings({ company, voucherBrands, settings, printSettings, setD
   function save() { if (saving) return; const opening_hours = openingHoursSummary(); runSave(setSaving, () => setDbState((current) => ({ ...current, companies: current.companies.map((item) => item.id === company.id ? { ...form, opening_hours, is_open: hours.some((hour) => hour.active), hero_image: form.banner_url || form.hero_image, updated_at: new Date().toISOString() } : item) })), "Configurações salvas com sucesso."); }
   function saveAutoPrint(value: boolean) {
     setAutoPrintOrders(value);
-    const fallback: PrintSettings = { company_id: company.id, auto_print_orders: value, auto_print_cash_sales: printSettings?.auto_print_cash_sales || false, printer_name: printSettings?.printer_name || "", paper_width: printSettings?.paper_width || "80mm", copies: printSettings?.copies || 1, footer_text: printSettings?.footer_text || "Startt Delivery — produzido por Startt Facilities" };
+    const fallback: PrintSettings = { company_id: company.id, auto_print_orders: value, auto_print_cash_sales: printSettings?.auto_print_cash_sales || false, printer_name: printSettings?.printer_name || "", qz_tray_enabled: printSettings?.qz_tray_enabled || false, qz_printer_name: printSettings?.qz_printer_name || "", paper_width: printSettings?.paper_width || "80mm", copies: printSettings?.copies || 1, footer_text: printSettings?.footer_text || "Startt Delivery — produzido por Startt Facilities" };
     setDbState((current) => ({ ...current, print_settings: current.print_settings.some((item) => item.company_id === company.id) ? current.print_settings.map((item) => item.company_id === company.id ? { ...item, auto_print_orders: value } : item) : [...current.print_settings, fallback] }));
     notify("success", value ? "Impressão automática ativada." : "Impressão automática desativada.");
   }
@@ -2604,7 +2703,7 @@ function MasterCompanies({ db, setDbState }: { db: DatabaseApi; setDbState: Reac
       ...current,
       companies: form.id ? current.companies.map((item) => item.id === form.id ? company : item) : [company, ...current.companies],
       settings: form.id ? current.settings : [{ id: id("set"), company_id: companyId, critical_locked: false, pix_enabled: false, pix_key: "" }, ...current.settings],
-      print_settings: form.id ? current.print_settings : [{ company_id: companyId, auto_print_orders: false, auto_print_cash_sales: false, printer_name: "", paper_width: "80mm", copies: 1, footer_text: "Startt Delivery — produzido por Startt Facilities" }, ...current.print_settings],
+      print_settings: form.id ? current.print_settings : [{ company_id: companyId, auto_print_orders: false, auto_print_cash_sales: false, printer_name: "", qz_tray_enabled: false, qz_printer_name: "", paper_width: "80mm", copies: 1, footer_text: "Startt Delivery — produzido por Startt Facilities" }, ...current.print_settings],
       users: !form.id && form.admin_email ? [{ id: id("usr"), company_id: companyId, name: "Admin inicial", email: form.admin_email, password: form.admin_password, role: "dono", is_active: true, created_at: created }, ...current.users] : current.users,
     }));
     setFormOpen(false);
@@ -2852,7 +2951,7 @@ function LegacyMasterCompanies({ db, setDbState }: { db: DatabaseApi; setDbState
     const companyId = form.id || id("cmp");
     const previous = db.companies.find((item) => item.id === form.id);
     const company: Company = { id: companyId, name: form.name, slug: form.slug, logo_url: previous?.logo_url || "", banner_url: previous?.banner_url || previous?.hero_image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1600&q=80", whatsapp: form.whatsapp, address: form.address, hero_image: previous?.hero_image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1600&q=80", primary_color: form.primary_color, minimum_order: previous?.minimum_order || 25, estimated_delivery_time: previous?.estimated_delivery_time || "35-45 min", is_open: previous?.is_open ?? true, delivery_enabled: previous?.delivery_enabled ?? true, pickup_enabled: previous?.pickup_enabled ?? true, status: form.status, plan: plan?.name || "Start", is_registration_enabled: form.is_registration_enabled, plan_id: form.plan_id, subscription_status: form.subscription_status, monthly_price: parseMoney(form.monthly_price), due_day: Number(form.due_day), next_due_date: form.next_due_date, last_payment_date: previous?.last_payment_date || "", payment_notes: form.payment_notes, assistant_enabled: previous?.assistant_enabled ?? false, assistant_status: previous?.assistant_status || "inactive", assistant_trial_until: previous?.assistant_trial_until || "", assistant_notes: previous?.assistant_notes || "", assistant_plan: previous?.assistant_plan || "mvp", footer_message: previous?.footer_message || "produzido por Startt Facilities", opening_hours: previous?.opening_hours || "Aberto hoje", created_at: previous?.created_at || created, updated_at: created };
-    setDbState((current) => ({ ...current, companies: form.id ? current.companies.map((item) => item.id === form.id ? company : item) : [company, ...current.companies], settings: form.id ? current.settings : [{ id: id("set"), company_id: companyId, critical_locked: false, pix_enabled: false, pix_key: "" }, ...current.settings], print_settings: form.id ? current.print_settings : [{ company_id: companyId, auto_print_orders: false, auto_print_cash_sales: false, printer_name: "", paper_width: "80mm", copies: 1, footer_text: "Startt Delivery — produzido por Startt Facilities" }, ...current.print_settings], users: !form.id && form.admin_email ? [{ id: id("usr"), company_id: companyId, name: "Admin inicial", email: form.admin_email, password: form.admin_password, role: "dono", is_active: true, created_at: created }, ...current.users] : current.users }));
+    setDbState((current) => ({ ...current, companies: form.id ? current.companies.map((item) => item.id === form.id ? company : item) : [company, ...current.companies], settings: form.id ? current.settings : [{ id: id("set"), company_id: companyId, critical_locked: false, pix_enabled: false, pix_key: "" }, ...current.settings], print_settings: form.id ? current.print_settings : [{ company_id: companyId, auto_print_orders: false, auto_print_cash_sales: false, printer_name: "", qz_tray_enabled: false, qz_printer_name: "", paper_width: "80mm", copies: 1, footer_text: "Startt Delivery — produzido por Startt Facilities" }, ...current.print_settings], users: !form.id && form.admin_email ? [{ id: id("usr"), company_id: companyId, name: "Admin inicial", email: form.admin_email, password: form.admin_password, role: "dono", is_active: true, created_at: created }, ...current.users] : current.users }));
     setFormOpen(false);
     notify("success", form.id ? "Empresa atualizada com sucesso." : "Empresa criada com sucesso.");
   }

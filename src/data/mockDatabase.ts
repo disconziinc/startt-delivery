@@ -200,6 +200,9 @@ export type Order = {
   archived_at?: string;
   removedFromDashboard?: boolean;
   removed_from_dashboard?: boolean;
+  qz_printed_at?: string;
+  qz_print_attempts?: number;
+  qz_print_error?: string;
   created_at: string;
 };
 
@@ -228,6 +231,8 @@ export type PrintSettings = {
   auto_print_orders: boolean;
   auto_print_cash_sales: boolean;
   printer_name: string;
+  qz_tray_enabled?: boolean;
+  qz_printer_name?: string;
   paper_width: "58mm" | "80mm";
   copies: number;
   footer_text: string;
@@ -499,9 +504,9 @@ export const initialMockDatabase: MockDatabaseState = {
     { id: "cash_dog_1", company_id: "cmp_dogexpress", items: [{ product_id: "prd_dog_1", name: "Dog Startt Clássico", quantity: 1, unit_price: 22.9, total: 22.9 }], subtotal: 22.9, discount: 0, total: 22.9, payment_method: "Dinheiro", created_by: "usr_dog_cash", created_at: now },
   ],
   print_settings: [
-    { company_id: "cmp_dogexpress", auto_print_orders: false, auto_print_cash_sales: false, printer_name: "Balcão", paper_width: "80mm", copies: 1, footer_text: "Startt Delivery — produzido por Startt Facilities" },
-    { company_id: "cmp_pizzariajoao", auto_print_orders: true, auto_print_cash_sales: true, printer_name: "Cozinha", paper_width: "80mm", copies: 2, footer_text: "Obrigado pela preferência" },
-    { company_id: "cmp_burguerpaulo", auto_print_orders: true, auto_print_cash_sales: false, printer_name: "Caixa", paper_width: "58mm", copies: 1, footer_text: "Volte sempre" },
+    { company_id: "cmp_dogexpress", auto_print_orders: false, auto_print_cash_sales: false, printer_name: "Balcão", qz_tray_enabled: false, qz_printer_name: "", paper_width: "80mm", copies: 1, footer_text: "Startt Delivery — produzido por Startt Facilities" },
+    { company_id: "cmp_pizzariajoao", auto_print_orders: true, auto_print_cash_sales: true, printer_name: "Cozinha", qz_tray_enabled: false, qz_printer_name: "", paper_width: "80mm", copies: 2, footer_text: "Obrigado pela preferência" },
+    { company_id: "cmp_burguerpaulo", auto_print_orders: true, auto_print_cash_sales: false, printer_name: "Caixa", qz_tray_enabled: false, qz_printer_name: "", paper_width: "58mm", copies: 1, footer_text: "Volte sempre" },
   ],
   reports: [
     { id: "rep_dog_1", company_id: "cmp_dogexpress", name: "Resumo diário", type: "all", created_at: now },
