@@ -79,6 +79,7 @@ import {
   persistDatabaseSnapshot,
   uploadPublicImage,
 } from "./services/database";
+import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import "./index.css";
 
 type DatabaseApi = ReturnType<typeof createDatabaseApi>;
@@ -122,6 +123,8 @@ type ToastType = "success" | "error" | "info";
 const MASTER_SESSION_KEY = "startt_delivery_master_session";
 const ADMIN_SESSION_PREFIX = "startt_delivery_admin_session_";
 const NEW_ORDER_EVENT = "startt:new-order";
+const DATABASE_CHANGE_PULSE_KEY = "startt_delivery_database_pulse";
+const DATABASE_CHANGE_PULSE_EVENT = "startt:database-pulse";
 const SAVE_DELAY = 250;
 const SITE_URL = "https://starttdelivery.com.br";
 const DEFAULT_SEO_TITLE = "Startt Delivery — Seu cardápio do seu jeito";
@@ -179,6 +182,16 @@ function activeOrders(orders: Order[]) {
 
 function notify(type: ToastType, message: string) {
   window.dispatchEvent(new CustomEvent("startt:toast", { detail: { type, message } }));
+}
+
+function emitDatabasePulse(companyId?: string) {
+  const detail = { company_id: companyId || "", at: new Date().toISOString() };
+  try {
+    localStorage.setItem(DATABASE_CHANGE_PULSE_KEY, JSON.stringify(detail));
+  } catch {
+    // O pulso local e apenas um atalho entre abas; o banco continua sendo a fonte real.
+  }
+  window.dispatchEvent(new CustomEvent(DATABASE_CHANGE_PULSE_EVENT, { detail }));
 }
 
 function isValidSlug(slug: string) {
@@ -659,7 +672,10 @@ function App() {
     pendingSaveRef.current = false;
     savingRef.current = true;
     persistDatabaseSnapshot(snapshot)
-      .then(() => setDatabaseError(""))
+      .then(() => {
+        setDatabaseError("");
+        emitDatabasePulse(companyRouteSlug ? snapshot.companies.find((company) => company.slug === companyRouteSlug)?.id : undefined);
+      })
       .catch((error) => setDatabaseError(`Falha ao salvar no banco: ${readableError(error)}`))
       .finally(() => {
         savingRef.current = false;
@@ -669,7 +685,7 @@ function App() {
 
   useEffect(() => {
     function refreshFromStorage(event?: StorageEvent) {
-      if (event && event.key !== DATABASE_STORAGE_KEY) return;
+      if (event && event.key !== DATABASE_STORAGE_KEY && event.key !== DATABASE_CHANGE_PULSE_KEY) return;
       if (savingRef.current || pendingSaveRef.current) return;
       (companyRouteSlug ? loadCompanyRouteSnapshot(companyRouteSlug, companyRouteNeedsAdminData) : loadDatabaseSnapshot()).then(setDbState);
     }
@@ -693,18 +709,51 @@ function App() {
       setDatabaseError(`Falha de sincronização com o banco: ${readableError((event as CustomEvent).detail)}`);
     }
     window.addEventListener("storage", refreshFromStorage);
+    window.addEventListener(DATABASE_CHANGE_PULSE_EVENT, refreshFromBackend);
     window.addEventListener("focus", refreshFromBackend);
     window.addEventListener(DATABASE_SYNC_ERROR_EVENT, handleSyncError);
     document.addEventListener("visibilitychange", handleVisibility);
-    const interval = window.setInterval(refreshFromBackend, 30000);
+    const interval = window.setInterval(refreshFromBackend, companyRouteNeedsAdminData ? 5000 : 30000);
     return () => {
       window.removeEventListener("storage", refreshFromStorage);
+      window.removeEventListener(DATABASE_CHANGE_PULSE_EVENT, refreshFromBackend);
       window.removeEventListener("focus", refreshFromBackend);
       window.removeEventListener(DATABASE_SYNC_ERROR_EVENT, handleSyncError);
       document.removeEventListener("visibilitychange", handleVisibility);
       window.clearInterval(interval);
     };
   }, [companyRouteSlug, companyRouteNeedsAdminData]);
+
+  useEffect(() => {
+    if (!companyRouteSlug || !companyRouteNeedsAdminData || !isSupabaseConfigured || !supabase) return;
+    const supabaseClient = supabase;
+    const company = dbState.companies.find((item) => item.slug === companyRouteSlug);
+    if (!company?.id) return;
+
+    const refreshAdminData = () => {
+      if (savingRef.current || pendingSaveRef.current || refreshInFlightRef.current) return;
+      refreshInFlightRef.current = true;
+      loadCompanyRouteSnapshot(companyRouteSlug, true)
+        .then((snapshot) => {
+          setDbState(snapshot);
+          setDatabaseError("");
+        })
+        .catch(() => setDatabaseError("Não foi possível atualizar pedidos em tempo real. Atualize a tela se necessário."))
+        .finally(() => {
+          refreshInFlightRef.current = false;
+        });
+    };
+
+    const channel = supabaseClient
+      .channel(`startt-admin-orders-${company.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: `company_id=eq.${company.id}` }, refreshAdminData)
+      .on("postgres_changes", { event: "*", schema: "public", table: "order_items", filter: `company_id=eq.${company.id}` }, refreshAdminData)
+      .subscribe();
+
+    return () => {
+      supabaseClient.removeChannel(channel);
+    };
+  }, [companyRouteSlug, companyRouteNeedsAdminData, dbState.companies.map((company) => `${company.slug}:${company.id}`).join("|")]);
 
   const shell = (node: React.ReactNode) => withToast(<>{databaseError && <div className="sticky top-0 z-[70] border-b border-amber-300 bg-amber-100 px-4 py-2 text-center text-sm font-black text-amber-900">{databaseError}</div>}{node}</>);
 
@@ -1640,8 +1689,10 @@ function Cashier({ company, user, products, setDbState }: { company: Company; us
   const [cart, setCart] = useState<Array<{ product: Product; qty: number }>>([]);
   const [discount, setDiscount] = useState(0);
   const [payment, setPayment] = useState<PaymentMethod>("Pix");
+  const activeProducts = products.filter((product) => product.active);
   const subtotal = cart.reduce((sum, item) => sum + item.product.price * item.qty, 0);
   const total = Math.max(0, subtotal - discount);
+  const itemCount = cart.reduce((sum, item) => sum + item.qty, 0);
   function add(product: Product) {
     setCart((current) => current.find((item) => item.product.id === product.id) ? current.map((item) => item.product.id === product.id ? { ...item, qty: item.qty + 1 } : item) : [...current, { product, qty: 1 }]);
   }
@@ -1667,33 +1718,69 @@ function Cashier({ company, user, products, setDbState }: { company: Company; us
     notify("success", "Venda presencial registrada com sucesso.");
   }
   return (
-    <section className="grid gap-5 lg:grid-cols-[1fr_360px]">
-      <Panel title="Caixa presencial">
-        <div className="grid gap-3 md:grid-cols-2">{products.map((product) => <button key={product.id} onClick={() => add(product)} className="rounded-lg border border-black/10 bg-white p-4 text-left"><b>{product.name}</b><span className="block text-startt-muted">{money(product.price)}</span></button>)}</div>
-      </Panel>
-      <Panel title="Carrinho do caixa">
-        <div className="grid gap-3">
+    <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_400px]">
+      <section className="grid gap-4 rounded-3xl border border-black/10 bg-white p-4 shadow-sm sm:p-5">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-black">Caixa presencial</h2>
+            <p className="text-sm text-startt-muted">Toque nos produtos para montar uma venda rápida no balcão.</p>
+          </div>
+          <span className="rounded-full bg-startt-green/10 px-3 py-1 text-sm font-black text-startt-green">{activeProducts.length} produtos ativos</span>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+          {activeProducts.map((product) => (
+            <button key={product.id} onClick={() => add(product)} className="group grid min-h-[132px] grid-cols-[74px_1fr] items-center gap-3 rounded-2xl border border-black/10 bg-white p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-startt-green/40 hover:shadow-card">
+              <img src={product.image} alt="" className="h-[74px] w-[74px] rounded-2xl object-cover" />
+              <span className="grid gap-2">
+                <b className="line-clamp-2 text-sm leading-tight text-startt-ink">{product.name}</b>
+                <span className="text-xs font-bold text-startt-muted">{product.preparation_time || 10} min</span>
+                <strong className="text-lg text-startt-green">{money(product.price)}</strong>
+              </span>
+            </button>
+          ))}
+          {!activeProducts.length && <Empty text="Nenhum produto ativo para venda no caixa." />}
+        </div>
+      </section>
+
+      <aside className="grid gap-4 rounded-3xl border border-black/10 bg-white p-4 shadow-sm sm:p-5 xl:sticky xl:top-24 xl:self-start">
+        <div className="flex items-center justify-between gap-3 border-b border-black/10 pb-3">
+          <div>
+            <h2 className="text-xl font-black">Carrinho</h2>
+            <p className="text-sm text-startt-muted">{itemCount ? `${itemCount} item(ns) na venda` : "Nenhum item adicionado"}</p>
+          </div>
+          {cart.length > 0 && <button type="button" onClick={() => setCart([])} className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-black text-startt-muted">Limpar</button>}
+        </div>
+
+        <div className="grid max-h-[42vh] gap-3 overflow-auto pr-1">
           {cart.map((item) => (
-            <div key={item.product.id} className="grid gap-3 border-b border-black/10 pb-3">
-              <div className="flex justify-between gap-3">
-                <span className="font-bold">{item.qty}x {item.product.name}</span>
-                <b>{money(item.qty * item.product.price)}</b>
+            <div key={item.product.id} className="grid gap-3 rounded-2xl border border-black/10 bg-startt-paper/70 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <span className="block truncate font-black">{item.product.name}</span>
+                  <span className="text-sm text-startt-muted">{money(item.product.price)} cada</span>
+                </div>
+                <b className="shrink-0">{money(item.qty * item.product.price)}</b>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <button type="button" onClick={() => decrease(item.product.id)} className="grid h-10 w-10 place-items-center rounded-xl border border-black/10 bg-white font-black" aria-label={`Diminuir ${item.product.name}`}><Minus size={16} /></button>
-                <button type="button" onClick={() => add(item.product)} className="grid h-10 w-10 place-items-center rounded-xl border border-black/10 bg-white font-black" aria-label={`Adicionar ${item.product.name}`}><Plus size={16} /></button>
-                <button type="button" onClick={() => remove(item.product.id)} className="ml-auto inline-flex min-h-10 items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 text-sm font-black text-startt-red"><Trash2 size={16} /> Remover</button>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => decrease(item.product.id)} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-black/10 bg-white font-black" aria-label={`Diminuir ${item.product.name}`}><Minus size={16} /></button>
+                <span className="grid h-10 min-w-12 place-items-center rounded-xl bg-white px-3 font-black">{item.qty}</span>
+                <button type="button" onClick={() => add(item.product)} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-black/10 bg-white font-black" aria-label={`Adicionar ${item.product.name}`}><Plus size={16} /></button>
+                <button type="button" onClick={() => remove(item.product.id)} className="ml-auto grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-red-200 bg-red-50 text-startt-red" aria-label={`Remover ${item.product.name}`}><Trash2 size={16} /></button>
               </div>
             </div>
           ))}
           {!cart.length && <p className="rounded-xl bg-startt-paper p-4 text-sm font-bold text-startt-muted">Nenhum item no carrinho.</p>}
         </div>
-        {cart.length > 0 && <button type="button" onClick={() => setCart([])} className="w-fit rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-black text-startt-muted">Limpar carrinho</button>}
-        <Input placeholder="Desconto manual" value={String(discount)} onChange={(value) => setDiscount(Number(value) || 0)} />
-        <Select value={payment} onChange={(value) => setPayment(value as PaymentMethod)}><option>Pix</option><option>Cartão</option><option>Dinheiro</option></Select>
-        <Totals subtotal={subtotal} discount={discount} deliveryFee={0} total={total} />
-        <button onClick={finish} className="w-full rounded-lg bg-startt-green px-4 py-3 font-black text-white">Finalizar venda</button>
-      </Panel>
+
+        <div className="grid gap-3 border-t border-black/10 pt-3">
+          <label className="grid gap-2 text-sm font-bold">Desconto manual<Input placeholder="0,00" value={String(discount).replace(".", ",")} onChange={(value) => setDiscount(Math.max(0, parseMoney(value) || 0))} /></label>
+          <label className="grid gap-2 text-sm font-bold">Pagamento<Select value={payment} onChange={(value) => setPayment(value as PaymentMethod)}><option>Pix</option><option>Cartão</option><option>Dinheiro</option></Select></label>
+          <div className="rounded-2xl bg-startt-ink p-4 text-white">
+            <Totals subtotal={subtotal} discount={discount} deliveryFee={0} total={total} />
+          </div>
+          <button onClick={finish} disabled={!cart.length} className="w-full rounded-xl bg-startt-green px-4 py-4 font-black text-white shadow-lg shadow-startt-green/20 disabled:cursor-not-allowed disabled:opacity-50">Finalizar venda</button>
+        </div>
+      </aside>
     </section>
   );
 }
@@ -3047,5 +3134,3 @@ function groupSum<T extends Record<string, unknown>>(items: T[], key: keyof T) {
 function sumByDay(items: Array<{ date: string; total: number }>) { return items.reduce<Record<string, number>>((acc, item) => { const day = item.date.slice(0, 10); acc[day] = (acc[day] || 0) + item.total; return acc; }, {}); }
 
 createRoot(document.getElementById("root")!).render(<App />);
-
-
