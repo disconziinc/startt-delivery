@@ -7,7 +7,26 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="manifest" href="/site.webmanifest" />
+    <script>
+      (function () {
+        var segments = (window.location.pathname || "/").split("/").filter(Boolean);
+        var reserved = ["master", "sobre", "contatos", "admin", "assets", "docs", "api"];
+        var slug = (segments[0] || "").toLowerCase().replace(/[^a-z0-9-]/g, "");
+        var startUrl = "/";
+
+        if (slug === "master") {
+          startUrl = "/master";
+        } else if (slug && reserved.indexOf(slug) === -1) {
+          startUrl = segments[1] === "admin" ? "/" + slug + "/admin/dashboard" : "/" + slug;
+        }
+
+        var manifest = document.createElement("link");
+        manifest.id = "startt-manifest";
+        manifest.rel = "manifest";
+        manifest.href = "/api/site.webmanifest?start_url=" + encodeURIComponent(startUrl);
+        document.head.appendChild(manifest);
+      })();
+    </script>
     <meta name="theme-color" content="#FF6A00" />
     <meta name="description" content="Sistema profissional de cardápio digital para lancherias. Receba pedidos pelo WhatsApp, tenha seu próprio delivery e gerencie tudo em um painel moderno." />
     <meta name="keywords" content="cardápio digital, delivery whatsapp, sistema para lancheria, delivery próprio, sistema delivery, cardápio online, Startt Delivery, delivery Porto Alegre, painel para lancheria, sistema para hamburgueria, pedidos via WhatsApp" />
