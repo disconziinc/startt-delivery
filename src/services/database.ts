@@ -25,7 +25,7 @@ const PUBLIC_CATALOG_CACHE_STATUS_KEY = "startt_public_catalog_cache_status";
 const emergencyCompanyColumns = "id,name,slug,logo_url,banner_url,whatsapp,address,hero_image,primary_color,minimum_order,estimated_delivery_time,is_open,delivery_enabled,pickup_enabled,status,is_registration_enabled,footer_message,opening_hours";
 const emergencySettingsColumns = "id,company_id,critical_locked";
 const emergencyCategoryColumns = "id,company_id,name,sort_order,active";
-const emergencyProductColumns = "id,company_id,category_id,name,description,price,image,ingredients,preparation_time,featured,active,badge";
+const emergencyProductColumns = "id,company_id,category_id,name,description,price,ingredients,preparation_time,featured,active,badge";
 const emergencyDeliveryZoneColumns = "id,company_id,neighborhood,fee,estimated_minutes,active";
 
 const tableNames = [
@@ -437,7 +437,7 @@ function emergencyProduct(row: Record<string, unknown>): Product {
     name: String(row.name || ""),
     description: String(row.description || ""),
     price: Number(row.price || 0),
-    image: String(row.image || ""),
+    image: "",
     ingredients: String(row.ingredients || row.description || ""),
     preparation_time: Number(row.preparation_time || 0),
     featured: Boolean(row.featured || false),
