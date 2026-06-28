@@ -79,7 +79,7 @@ import {
   persistDatabaseSnapshot,
   uploadPublicImage,
 } from "./services/database";
-import { isSupabaseConfigured, supabase } from "./lib/supabase";
+import { isSupabaseConfigured, STARTT_EMERGENCY_MODE, supabase } from "./lib/supabase";
 import {
   connectQzTray,
   disconnectQzTray,
@@ -607,6 +607,7 @@ function App() {
   const parts = window.location.pathname.split("/").filter(Boolean);
   const companyRouteSlug = parts[0] && !["master", "sobre", "contatos"].includes(parts[0]) ? parts[0] : "";
   const companyRouteNeedsAdminData = Boolean(companyRouteSlug && parts[1] === "admin");
+  const emergencyPublicRoute = Boolean(STARTT_EMERGENCY_MODE && companyRouteSlug && !companyRouteNeedsAdminData);
   const [dbState, setDbState] = useState<MockDatabaseState>(() => getCachedCompanyRouteSnapshot(companyRouteSlug) || getInitialDatabaseSnapshot());
   const [databaseReady, setDatabaseReady] = useState(false);
   const [databaseError, setDatabaseError] = useState("");
@@ -621,7 +622,7 @@ function App() {
   const setPersistentDbState = useCallback((action: React.SetStateAction<MockDatabaseState>) => {
     pendingSaveRef.current = true;
     setDbState(action);
-  }, [companyRouteSlug, companyRouteNeedsAdminData]);
+  }, [companyRouteSlug, companyRouteNeedsAdminData, emergencyPublicRoute]);
 
   useEffect(() => {
     if (!parts[0] || ["sobre", "contatos"].includes(parts[0])) {
@@ -657,7 +658,7 @@ function App() {
         if (companyRouteSlug && snapshot.companies.some((company) => company.slug === companyRouteSlug)) cacheCompanyRouteSnapshot(companyRouteSlug, snapshot);
         setDatabaseError("");
         setShowRouteLoading(false);
-        if (companyRouteSlug) {
+        if (companyRouteSlug && !emergencyPublicRoute) {
           loadDatabaseSnapshot()
             .then((fullSnapshot) => {
               if (alive && !pendingSaveRef.current && !savingRef.current) setDbState(fullSnapshot);
@@ -696,6 +697,7 @@ function App() {
   }, [dbState, databaseReady, savePulse]);
 
   useEffect(() => {
+    if (emergencyPublicRoute) return;
     function refreshFromStorage(event?: StorageEvent) {
       if (event && event.key !== DATABASE_STORAGE_KEY && event.key !== DATABASE_CHANGE_PULSE_KEY) return;
       if (savingRef.current || pendingSaveRef.current) return;
@@ -734,7 +736,7 @@ function App() {
       document.removeEventListener("visibilitychange", handleVisibility);
       window.clearInterval(interval);
     };
-  }, [companyRouteSlug, companyRouteNeedsAdminData]);
+  }, [companyRouteSlug, companyRouteNeedsAdminData, emergencyPublicRoute]);
 
   useEffect(() => {
     if (!companyRouteSlug || !companyRouteNeedsAdminData || !isSupabaseConfigured || !supabase) return;

@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { STARTT_EMERGENCY_MODE, supabase, isSupabaseConfigured } from "../lib/supabase";
 import {
   Category,
   Company,
@@ -20,6 +20,13 @@ export const DATABASE_SYNC_ERROR_EVENT = "startt:database-sync-error";
 const PUBLIC_STORAGE_BUCKET = "startt-public";
 const COMPANY_ROUTE_CACHE_PREFIX = "startt_company_route_cache:";
 const allowLocalDatabaseFallback = import.meta.env.DEV || import.meta.env.VITE_ALLOW_LOCAL_DATABASE === "true";
+const PUBLIC_CATALOG_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const PUBLIC_CATALOG_CACHE_STATUS_KEY = "startt_public_catalog_cache_status";
+const emergencyCompanyColumns = "id,name,slug,logo_url,banner_url,whatsapp,address,hero_image,primary_color,minimum_order,estimated_delivery_time,is_open,delivery_enabled,pickup_enabled,status,is_registration_enabled,footer_message,opening_hours";
+const emergencySettingsColumns = "id,company_id,critical_locked";
+const emergencyCategoryColumns = "id,company_id,name,sort_order,active";
+const emergencyProductColumns = "id,company_id,category_id,name,description,price,image,ingredients,preparation_time,featured,active,badge";
+const emergencyDeliveryZoneColumns = "id,company_id,neighborhood,fee,estimated_minutes,active";
 
 const tableNames = [
   "plans",
@@ -52,6 +59,11 @@ const defaultMasterUser = {
 
 type TableName = (typeof tableNames)[number];
 type SnapshotKey = keyof MockDatabaseState;
+type PublicCatalogStatus = "idle" | "fresh" | "cache" | "failed";
+type PublicCatalogCache = {
+  cachedAt: number;
+  data: Partial<MockDatabaseState>;
+};
 
 const nullableDateFields = new Set([
   "companies.next_due_date",
@@ -301,6 +313,199 @@ function requireSupabase() {
   return supabase;
 }
 
+function emptyDatabaseState(): MockDatabaseState {
+  return {
+    companies: [],
+    plans: [],
+    users: [],
+    master_users: [],
+    categories: [],
+    products: [],
+    orders: [],
+    order_items: [],
+    customers: [],
+    voucher_brands: [],
+    delivery_zones: [],
+    coupons: [],
+    settings: [],
+    cash_sales: [],
+    print_settings: [],
+    reports: [],
+    inventory_items: [],
+  };
+}
+
+function scopedDefaults(parsed: Partial<MockDatabaseState> = {}): MockDatabaseState {
+  return withDefaults({ ...emptyDatabaseState(), ...parsed });
+}
+
+function publicCatalogCacheKey(slug: string) {
+  return `startt_public_catalog_cache_${slug}`;
+}
+
+function setPublicCatalogStatus(slug: string, status: PublicCatalogStatus) {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(PUBLIC_CATALOG_CACHE_STATUS_KEY, JSON.stringify({ slug, status, updatedAt: Date.now() }));
+  } catch {
+    // Cache/status cannot block the public catalog.
+  }
+}
+
+function readPublicCatalogCache(slug: string): Partial<MockDatabaseState> | null {
+  if (typeof localStorage === "undefined") return null;
+  try {
+    const cached = JSON.parse(localStorage.getItem(publicCatalogCacheKey(slug)) || "null") as PublicCatalogCache | null;
+    if (!cached || Date.now() - cached.cachedAt > PUBLIC_CATALOG_CACHE_TTL_MS) return null;
+    return cached.data;
+  } catch {
+    return null;
+  }
+}
+
+function writePublicCatalogCache(slug: string, data: Partial<MockDatabaseState>) {
+  if (typeof localStorage === "undefined") return;
+  try {
+    const key = publicCatalogCacheKey(slug);
+    const cache: PublicCatalogCache = { cachedAt: Date.now(), data };
+    localStorage.removeItem(key);
+    localStorage.setItem(key, JSON.stringify(cache));
+  } catch {
+    // The fresh response is still usable even when browser storage is full.
+  }
+}
+
+function isStopImmediatelyError(error: unknown) {
+  const value = error as { status?: number; message?: string };
+  const message = value?.message || String(error || "");
+  return [401, 402, 403, 500].includes(value?.status || 0) || /timeout|canceling statement|network|failed to fetch|fetch failed|invalid api key|jwt/i.test(message);
+}
+
+function emergencyCompany(row: Record<string, unknown>, settings?: Record<string, unknown>): Company {
+  return {
+    id: String(row.id || ""),
+    name: String(row.name || ""),
+    slug: String(row.slug || ""),
+    logo_url: String(row.logo_url || ""),
+    banner_url: String(row.banner_url || row.hero_image || ""),
+    whatsapp: String(settings?.whatsapp || row.whatsapp || ""),
+    address: String(settings?.address || row.address || ""),
+    hero_image: String(row.banner_url || row.hero_image || ""),
+    primary_color: String(row.primary_color || "#116a4b"),
+    minimum_order: Number(settings?.minimum_order ?? row.minimum_order ?? 0),
+    estimated_delivery_time: String(row.estimated_delivery_time || "30-45 min"),
+    is_open: row.is_open !== false,
+    delivery_enabled: Boolean(settings?.delivery_enabled ?? row.delivery_enabled ?? true),
+    pickup_enabled: Boolean(settings?.pickup_enabled ?? row.pickup_enabled ?? true),
+    status: row.status === "blocked" || row.status === "canceled" || row.status === "disabled" ? row.status : "active",
+    plan: String(row.plan || "Start"),
+    is_registration_enabled: row.is_registration_enabled !== false,
+    plan_id: String(row.plan_id || "plan_start"),
+    subscription_status: row.subscription_status === "overdue" || row.subscription_status === "canceled" ? row.subscription_status : "active",
+    monthly_price: Number(row.monthly_price || 0),
+    due_day: Number(row.due_day || 10),
+    next_due_date: String(row.next_due_date || ""),
+    last_payment_date: String(row.last_payment_date || ""),
+    payment_notes: String(row.payment_notes || ""),
+    assistant_enabled: false,
+    assistant_status: "inactive",
+    assistant_trial_until: "",
+    assistant_notes: "",
+    assistant_plan: "mvp",
+    footer_message: String(row.footer_message || "produzido por Startt Facilities"),
+    opening_hours: String(settings?.opening_hours || row.opening_hours || ""),
+    created_at: String(row.created_at || new Date().toISOString()),
+    updated_at: String(row.updated_at || row.created_at || new Date().toISOString()),
+  } as Company;
+}
+
+function emergencyCategory(row: Record<string, unknown>): Category {
+  return {
+    id: String(row.id || ""),
+    company_id: String(row.company_id || ""),
+    name: String(row.name || ""),
+    sort_order: Number(row.sort_order || 0),
+    active: Boolean(row.active ?? true),
+  };
+}
+
+function emergencyProduct(row: Record<string, unknown>): Product {
+  return {
+    id: String(row.id || ""),
+    company_id: String(row.company_id || ""),
+    category_id: String(row.category_id || ""),
+    name: String(row.name || ""),
+    description: String(row.description || ""),
+    price: Number(row.price || 0),
+    image: String(row.image || ""),
+    ingredients: String(row.ingredients || row.description || ""),
+    preparation_time: Number(row.preparation_time || 0),
+    featured: Boolean(row.featured || false),
+    active: Boolean(row.active ?? true),
+    badge: row.badge ? String(row.badge) : undefined,
+  };
+}
+
+async function loadEmergencyPublicCatalog(slug: string): Promise<MockDatabaseState> {
+  try {
+    const { data: companyRow, error: companyError } = await requireSupabase().from("companies").select(emergencyCompanyColumns).eq("slug", slug).maybeSingle();
+    if (companyError) throw companyError;
+    if (!companyRow) {
+      setPublicCatalogStatus(slug, "failed");
+      return scopedDefaults();
+    }
+
+    const companyId = String((companyRow as Record<string, unknown>).id || "");
+    const [settings, categories, products, deliveryZones] = await Promise.all([
+      requireSupabase().from("settings").select(emergencySettingsColumns).eq("company_id", companyId).maybeSingle().then(({ data, error }) => {
+        if (error) throw error;
+        return (data || {}) as Record<string, unknown>;
+      }),
+      requireSupabase().from("categories").select(emergencyCategoryColumns).eq("company_id", companyId).eq("active", true).order("sort_order").limit(100).then(({ data, error }) => {
+        if (error) throw error;
+        return ((data || []) as unknown as Record<string, unknown>[]).map(emergencyCategory);
+      }),
+      requireSupabase().from("products").select(emergencyProductColumns).eq("company_id", companyId).eq("active", true).limit(300).then(({ data, error }) => {
+        if (error) throw error;
+        return ((data || []) as unknown as Record<string, unknown>[]).map(emergencyProduct);
+      }),
+      requireSupabase().from("delivery_zones").select(emergencyDeliveryZoneColumns).eq("company_id", companyId).eq("active", true).limit(150).then(({ data, error }) => {
+        if (error) throw error;
+        return (data || []) as MockDatabaseState["delivery_zones"];
+      }),
+    ]);
+
+    const data: Partial<MockDatabaseState> = {
+      companies: [emergencyCompany(companyRow as Record<string, unknown>, settings)],
+      categories,
+      products,
+      delivery_zones: deliveryZones,
+      settings: settings && Object.keys(settings).length ? [settings as Settings] : [],
+      coupons: [],
+      voucher_brands: [],
+      orders: [],
+      order_items: [],
+      customers: [],
+    };
+    writePublicCatalogCache(slug, data);
+    setPublicCatalogStatus(slug, "fresh");
+    return scopedDefaults(data);
+  } catch (error) {
+    console.warn("Falha no carregamento publico emergencial.", error);
+    const cached = readPublicCatalogCache(slug);
+    if (cached) {
+      setPublicCatalogStatus(slug, "cache");
+      return scopedDefaults(cached);
+    }
+    if (isStopImmediatelyError(error)) {
+      setPublicCatalogStatus(slug, "failed");
+      return scopedDefaults();
+    }
+    setPublicCatalogStatus(slug, "failed");
+    return scopedDefaults();
+  }
+}
+
 async function selectAll<T>(table: TableName): Promise<T[]> {
   const client = requireSupabase();
   const { data, error } = await client.from(table).select("*");
@@ -475,32 +680,38 @@ export async function loadCompanyRouteSnapshot(slug: string, includeAdminData = 
   }
 
   try {
+    if (STARTT_EMERGENCY_MODE && !includeAdminData) {
+      return loadEmergencyPublicCatalog(slug);
+    }
+
     const client = requireSupabase();
-    const { data: routeBundle, error: routeBundleError } = await client.rpc("startt_company_route_bundle", {
-      p_slug: slug,
-      p_include_admin: includeAdminData,
-    });
-    if (!routeBundleError && routeBundle && typeof routeBundle === "object" && (!includeAdminData || "inventory_items" in (routeBundle as Record<string, unknown>))) {
-      const bundle = routeBundle as Partial<MockDatabaseState> & { company?: Company | null };
-      return withDefaults({
-        companies: bundle.company ? [bundle.company] : [],
-        plans: bundle.plans || [],
-        master_users: [],
-        users: bundle.users || [],
-        categories: bundle.categories || [],
-        products: bundle.products || [],
-        orders: bundle.orders || [],
-        order_items: bundle.order_items || [],
-        customers: bundle.customers || [],
-        voucher_brands: bundle.voucher_brands || [],
-        delivery_zones: bundle.delivery_zones || [],
-        coupons: bundle.coupons || [],
-        settings: bundle.settings || [],
-        cash_sales: bundle.cash_sales || [],
-        print_settings: bundle.print_settings || [],
-        reports: bundle.reports || [],
-        inventory_items: bundle.inventory_items || [],
+    if (!STARTT_EMERGENCY_MODE) {
+      const { data: routeBundle, error: routeBundleError } = await client.rpc("startt_company_route_bundle", {
+        p_slug: slug,
+        p_include_admin: includeAdminData,
       });
+      if (!routeBundleError && routeBundle && typeof routeBundle === "object" && (!includeAdminData || "inventory_items" in (routeBundle as Record<string, unknown>))) {
+        const bundle = routeBundle as Partial<MockDatabaseState> & { company?: Company | null };
+        return withDefaults({
+          companies: bundle.company ? [bundle.company] : [],
+          plans: bundle.plans || [],
+          master_users: [],
+          users: bundle.users || [],
+          categories: bundle.categories || [],
+          products: bundle.products || [],
+          orders: bundle.orders || [],
+          order_items: bundle.order_items || [],
+          customers: bundle.customers || [],
+          voucher_brands: bundle.voucher_brands || [],
+          delivery_zones: bundle.delivery_zones || [],
+          coupons: bundle.coupons || [],
+          settings: bundle.settings || [],
+          cash_sales: bundle.cash_sales || [],
+          print_settings: bundle.print_settings || [],
+          reports: bundle.reports || [],
+          inventory_items: bundle.inventory_items || [],
+        });
+      }
     }
 
     const [{ data: company, error: companyError }, plans] = await Promise.all([
