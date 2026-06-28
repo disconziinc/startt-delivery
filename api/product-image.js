@@ -8,7 +8,7 @@ function sendMissing(res) {
 
 export default async function handler(req, res) {
   const id = String(req.query?.id || "");
-  if (!SUPABASE_URL || !SUPABASE_KEY || !/^prd_[A-Za-z0-9_-]+$/.test(id)) {
+  if (!SUPABASE_URL || !SUPABASE_KEY || !/^[A-Za-z0-9_-]{3,120}$/.test(id)) {
     sendMissing(res);
     return;
   }
