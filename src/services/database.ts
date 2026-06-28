@@ -471,14 +471,15 @@ function emergencyCategory(row: Record<string, unknown>): Category {
 }
 
 function emergencyProduct(row: Record<string, unknown>): Product {
+  const productId = String(row.id || "");
   return {
-    id: String(row.id || ""),
+    id: productId,
     company_id: String(row.company_id || ""),
     category_id: String(row.category_id || ""),
     name: String(row.name || ""),
     description: String(row.description || ""),
     price: Number(row.price || 0),
-    image: "",
+    image: productId ? `/api/product-image?id=${encodeURIComponent(productId)}` : "",
     ingredients: String(row.ingredients || row.description || ""),
     preparation_time: Number(row.preparation_time || 0),
     featured: Boolean(row.featured || false),

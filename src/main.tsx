@@ -3058,7 +3058,7 @@ function ProductCard({ product, category, onOpen, onAdd }: { product: Product; c
     <article onClick={onOpen} className="sd-card-lift grid cursor-pointer overflow-hidden rounded-3xl border border-black/10 bg-white p-3 shadow-sm sm:grid-cols-[132px_1fr] sm:p-4">
       <div className="relative h-36 overflow-hidden rounded-2xl bg-[linear-gradient(135deg,#FF6A00,#1A1A1A)] shadow-sm sm:h-full sm:min-h-40">
         {hasImage ? (
-          <img className="h-full w-full object-cover" src={product.image} alt={product.name} onError={(event) => { event.currentTarget.style.display = "none"; }} />
+          <img className="h-full w-full object-cover" src={product.image} alt={product.name} loading="lazy" decoding="async" onError={(event) => { event.currentTarget.style.display = "none"; }} />
         ) : (
           <div className="grid h-full w-full place-items-center text-white/92"><Utensils size={34} /><span className="sr-only">Produto sem foto</span></div>
         )}
@@ -3086,7 +3086,7 @@ function ProductModal({ product, category, onClose, onAdd }: { product: Product;
       <button className="absolute inset-0 cursor-default" onClick={onClose} aria-label="Fechar produto" />
       <section className="relative grid max-h-[92vh] w-[min(720px,100%)] overflow-hidden rounded-lg bg-white shadow-2xl animate-in zoom-in-95 duration-200 md:grid-cols-[280px_1fr]">
         <button onClick={onClose} className="absolute right-3 top-3 z-10 grid h-10 w-10 place-items-center rounded-lg bg-white/95 shadow" aria-label="Fechar"><X size={20} /></button>
-        {hasImage ? <img className="h-64 w-full object-cover md:h-full" src={product.image} alt={product.name} onError={(event) => { event.currentTarget.style.display = "none"; }} /> : <div className="grid h-64 w-full place-items-center bg-[linear-gradient(135deg,#FF6A00,#1A1A1A)] text-white md:h-full"><Utensils size={52} /></div>}
+        {hasImage ? <img className="h-64 w-full object-cover md:h-full" src={product.image} alt={product.name} decoding="async" onError={(event) => { event.currentTarget.style.display = "none"; }} /> : <div className="grid h-64 w-full place-items-center bg-[linear-gradient(135deg,#FF6A00,#1A1A1A)] text-white md:h-full"><Utensils size={52} /></div>}
         <div className="grid gap-4 overflow-auto p-5">
           <div>
             <span className="text-xs font-black uppercase text-startt-green">{category}</span>
