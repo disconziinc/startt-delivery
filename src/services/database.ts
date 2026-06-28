@@ -838,6 +838,21 @@ async function loadAdminCompanyData(company: Company, plans: Plan[], screen: Adm
   return withDefaults(base);
 }
 
+export async function loadCompanyOrdersRefresh(companyId: string): Promise<Pick<MockDatabaseState, "orders" | "order_items">> {
+  if (!isSupabaseConfigured) {
+    const fallback = readFallbackSnapshot();
+    return {
+      orders: fallback.orders.filter((order) => order.company_id === companyId),
+      order_items: fallback.order_items.filter((item) => item.company_id === companyId),
+    };
+  }
+  const [orders, order_items] = await Promise.all([
+    selectCompanyRows<MockDatabaseState["orders"][number]>("orders", companyId, tableColumns.orders, { orderBy: "created_at", ascending: false, limit: 100 }),
+    selectCompanyRows<MockDatabaseState["order_items"][number]>("order_items", companyId, tableColumns.order_items, { limit: 500 }),
+  ]);
+  return { orders, order_items };
+}
+
 export async function loadCompanyRouteSnapshot(slug: string, includeAdminData = false, screen: AdminScreenName = includeAdminData ? "dashboard" : "login"): Promise<MockDatabaseState> {
   if (!isSupabaseConfigured) {
     if (allowLocalDatabaseFallback) return readFallbackSnapshot();

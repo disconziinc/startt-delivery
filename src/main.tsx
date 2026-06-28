@@ -74,6 +74,7 @@ import {
   deleteCompanyCascade,
   getCachedCompanyRouteSnapshot,
   getInitialDatabaseSnapshot,
+  loadCompanyOrdersRefresh,
   loadCompanyRouteSnapshot,
   loadDatabaseSnapshot,
   persistDatabaseSnapshot,
@@ -704,9 +705,14 @@ function App() {
       const interval = window.setInterval(() => {
         if (savingRef.current || pendingSaveRef.current || refreshInFlightRef.current) return;
         refreshInFlightRef.current = true;
-        loadCompanyRouteSnapshot(companyRouteSlug, true, "pedidos")
-          .then((snapshot) => {
-            setDbState(snapshot);
+        const companyId = dbState.companies.find((company) => company.slug === companyRouteSlug)?.id;
+        if (!companyId) {
+          refreshInFlightRef.current = false;
+          return;
+        }
+        loadCompanyOrdersRefresh(companyId)
+          .then(({ orders, order_items }) => {
+            setDbState((current) => ({ ...current, orders, order_items }));
             setDatabaseError("");
           })
           .catch(() => setDatabaseError("Não foi possível atualizar pedidos. Atualize a tela se necessário."))
@@ -754,7 +760,7 @@ function App() {
       document.removeEventListener("visibilitychange", handleVisibility);
       window.clearInterval(interval);
     };
-  }, [companyRouteSlug, companyRouteNeedsAdminData, companyRouteAdminScreen, emergencyPublicRoute]);
+  }, [companyRouteSlug, companyRouteNeedsAdminData, companyRouteAdminScreen, emergencyPublicRoute, dbState.companies]);
 
   useEffect(() => {
     if (STARTT_EMERGENCY_MODE) return;
