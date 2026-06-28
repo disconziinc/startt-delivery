@@ -64,6 +64,47 @@ type PublicCatalogCache = {
   cachedAt: number;
   data: Partial<MockDatabaseState>;
 };
+type AdminScreenName =
+  | "dashboard"
+  | "conta"
+  | "caixa"
+  | "estoque"
+  | "pedidos"
+  | "clientes"
+  | "produtos"
+  | "categorias"
+  | "cupons"
+  | "relatorios"
+  | "fretes"
+  | "impressao"
+  | "configuracoes"
+  | "usuarios"
+  | "login";
+
+const tableColumns: Record<TableName, string> = {
+  plans: "id,name,monthly_price,max_products,max_users,allow_reports,allow_printing,allow_coupons,is_active",
+  companies: "id,name,slug,logo_url,banner_url,whatsapp,address,hero_image,primary_color,minimum_order,estimated_delivery_time,is_open,delivery_enabled,pickup_enabled,status,plan,is_registration_enabled,plan_id,subscription_status,monthly_price,due_day,next_due_date,last_payment_date,payment_notes,assistant_enabled,assistant_status,assistant_trial_until,assistant_notes,assistant_plan,footer_message,opening_hours,created_at,updated_at",
+  master_users: "id,name,email,password,role,is_active",
+  users: "id,company_id,name,email,password,role,is_active,created_at,updated_at,assistant_role,active",
+  categories: "id,company_id,name,emoji,sort_order,active",
+  products: "id,company_id,category_id,name,description,price,image,ingredients,preparation_time,featured,active,badge",
+  customers: "id,company_id,name,phone,normalized_phone,address,updated_at,total_orders,total_spent,last_order_at,created_at",
+  voucher_brands: "id,company_id,name,fee_percentage,active,created_at,updated_at",
+  delivery_zones: "id,company_id,neighborhood,fee,estimated_minutes,active",
+  coupons: "id,company_id,code,type,value,minimum_order,usage_limit,used_count,expires_at,active",
+  settings: "id,company_id,critical_locked,pix_enabled,pix_key,pix_receiver_name,pix_city,pix_description",
+  print_settings: "company_id,auto_print_orders,auto_print_cash_sales,printer_name,qz_tray_enabled,qz_printer_name,paper_width,copies,footer_text",
+  orders: "id,order_number,company_id,customer_id,customer_name,customer_phone,normalized_phone,customer_address,status,fulfillment,delivery_zone_id,subtotal,discount,delivery_fee,total,payment_method,payment_details,cash_change_for,calculated_change,change_for,change_amount,card_type,voucher_brand,voucher_fee_percentage,payment_status,pix_txid,pix_payload,pix_qr_code,customer_note,archived,archived_at,removed_from_dashboard,qz_printed_at,qz_print_attempts,qz_print_error,created_at",
+  order_items: "id,company_id,order_id,product_id,name,quantity,unit_price,total",
+  cash_sales: "id,company_id,items,subtotal,discount,total,payment_method,created_by,created_at",
+  reports: "id,company_id,name,type,created_at",
+  inventory_items: "id,company_id,name,category,current_quantity,minimum_quantity,unit,notes,active,purchase_flag,purchase_resolved,created_at,updated_at",
+};
+const companyAdminColumns = "id,name,slug,logo_url,banner_url,whatsapp,address,hero_image,primary_color,minimum_order,estimated_delivery_time,is_open,delivery_enabled,pickup_enabled,status,plan,is_registration_enabled,plan_id,subscription_status,monthly_price,due_day,next_due_date,last_payment_date,payment_notes,assistant_enabled,assistant_status,assistant_trial_until,assistant_notes,assistant_plan,footer_message,opening_hours,created_at,updated_at";
+const dashboardOrderColumns = "id,order_number,company_id,customer_id,customer_name,status,subtotal,discount,delivery_fee,total,payment_method,archived,removed_from_dashboard,created_at";
+const dashboardCashSaleColumns = "id,company_id,subtotal,discount,total,payment_method,created_at";
+const customerSummaryColumns = "id,company_id,name,phone,normalized_phone,address,total_orders,total_spent,last_order_at,created_at,updated_at";
+const productListColumns = "id,company_id,category_id,name,description,price,image,ingredients,preparation_time,featured,active,badge";
 
 const nullableDateFields = new Set([
   "companies.next_due_date",
@@ -506,9 +547,9 @@ async function loadEmergencyPublicCatalog(slug: string): Promise<MockDatabaseSta
   }
 }
 
-async function selectAll<T>(table: TableName): Promise<T[]> {
+async function selectAll<T>(table: TableName, columns = tableColumns[table]): Promise<T[]> {
   const client = requireSupabase();
-  const { data, error } = await client.from(table).select("*");
+  const { data, error } = await client.from(table).select(columns);
   if (error) throw error;
   return (data || []) as T[];
 }
@@ -518,9 +559,9 @@ function isMissingOptionalInventoryTable(error: unknown) {
   return /inventory_items|schema cache|does not exist|Could not find/i.test(message);
 }
 
-async function selectOptionalAll<T>(table: TableName): Promise<T[]> {
+async function selectOptionalAll<T>(table: TableName, columns = tableColumns[table]): Promise<T[]> {
   try {
-    return await selectAll<T>(table);
+    return await selectAll<T>(table, columns);
   } catch (error) {
     if (table === "inventory_items" && isMissingOptionalInventoryTable(error)) return [];
     throw error;
@@ -673,7 +714,131 @@ export async function loadDatabaseSnapshot(): Promise<MockDatabaseState> {
   }
 }
 
-export async function loadCompanyRouteSnapshot(slug: string, includeAdminData = false): Promise<MockDatabaseState> {
+async function selectCompanyRows<T>(
+  table: TableName,
+  companyId: string,
+  columns = tableColumns[table],
+  options: { orderBy?: string; ascending?: boolean; limit?: number; activeOnly?: boolean } = {},
+): Promise<T[]> {
+  let query = requireSupabase().from(table).select(columns).eq("company_id", companyId);
+  if (options.activeOnly) query = query.eq("active", true);
+  if (options.orderBy) query = query.order(options.orderBy, { ascending: options.ascending ?? true });
+  if (options.limit) query = query.limit(options.limit);
+  const { data, error } = await query;
+  if (error) {
+    if (table === "inventory_items" && isMissingOptionalInventoryTable(error)) return [];
+    throw error;
+  }
+  return (data || []) as T[];
+}
+
+async function loadAdminCompanyData(company: Company, plans: Plan[], screen: AdminScreenName): Promise<MockDatabaseState> {
+  const companyId = company.id;
+  const base = {
+    companies: [company],
+    plans,
+    master_users: [],
+    users: await selectCompanyRows<MockDatabaseState["users"][number]>("users", companyId, tableColumns.users, { limit: 50 }),
+  };
+
+  if (screen === "login" || screen === "conta" || screen === "usuarios") {
+    return withDefaults({
+      ...base,
+      users: await selectCompanyRows<MockDatabaseState["users"][number]>("users", companyId, tableColumns.users, { limit: 100 }),
+    });
+  }
+
+  if (screen === "dashboard") {
+    const [products, orders, customers, cash_sales, inventory_items] = await Promise.all([
+      selectCompanyRows<MockDatabaseState["products"][number]>("products", companyId, "id,company_id,category_id,name,price,active", { activeOnly: true, limit: 200 }),
+      selectCompanyRows<MockDatabaseState["orders"][number]>("orders", companyId, dashboardOrderColumns, { orderBy: "created_at", ascending: false, limit: 50 }),
+      selectCompanyRows<MockDatabaseState["customers"][number]>("customers", companyId, customerSummaryColumns, { orderBy: "created_at", ascending: false, limit: 100 }),
+      selectCompanyRows<MockDatabaseState["cash_sales"][number]>("cash_sales", companyId, dashboardCashSaleColumns, { orderBy: "created_at", ascending: false, limit: 50 }),
+      selectCompanyRows<MockDatabaseState["inventory_items"][number]>("inventory_items", companyId, "id,company_id,name,current_quantity,minimum_quantity,active,purchase_flag,purchase_resolved,updated_at", { orderBy: "updated_at", ascending: false, limit: 100 }),
+    ]);
+    return withDefaults({ ...base, products, orders, customers, cash_sales, inventory_items });
+  }
+
+  if (screen === "pedidos") {
+    const [orders, order_items, customers, products, print_settings] = await Promise.all([
+      selectCompanyRows<MockDatabaseState["orders"][number]>("orders", companyId, tableColumns.orders, { orderBy: "created_at", ascending: false, limit: 100 }),
+      selectCompanyRows<MockDatabaseState["order_items"][number]>("order_items", companyId, tableColumns.order_items, { limit: 500 }),
+      selectCompanyRows<MockDatabaseState["customers"][number]>("customers", companyId, customerSummaryColumns, { limit: 200 }),
+      selectCompanyRows<MockDatabaseState["products"][number]>("products", companyId, "id,company_id,category_id,name,price,active", { activeOnly: true, limit: 300 }),
+      selectCompanyRows<MockDatabaseState["print_settings"][number]>("print_settings", companyId, tableColumns.print_settings, { limit: 1 }),
+    ]);
+    return withDefaults({ ...base, orders, order_items, customers, products, print_settings });
+  }
+
+  if (screen === "caixa") {
+    const products = await selectCompanyRows<MockDatabaseState["products"][number]>("products", companyId, productListColumns, { activeOnly: true, limit: 300 });
+    return withDefaults({ ...base, products });
+  }
+
+  if (screen === "estoque") {
+    const inventory_items = await selectCompanyRows<MockDatabaseState["inventory_items"][number]>("inventory_items", companyId, tableColumns.inventory_items, { orderBy: "updated_at", ascending: false, limit: 500 });
+    return withDefaults({ ...base, inventory_items });
+  }
+
+  if (screen === "clientes") {
+    const [customers, orders, order_items] = await Promise.all([
+      selectCompanyRows<MockDatabaseState["customers"][number]>("customers", companyId, tableColumns.customers, { orderBy: "created_at", ascending: false, limit: 500 }),
+      selectCompanyRows<MockDatabaseState["orders"][number]>("orders", companyId, dashboardOrderColumns, { orderBy: "created_at", ascending: false, limit: 200 }),
+      selectCompanyRows<MockDatabaseState["order_items"][number]>("order_items", companyId, tableColumns.order_items, { limit: 500 }),
+    ]);
+    return withDefaults({ ...base, customers, orders, order_items });
+  }
+
+  if (screen === "produtos") {
+    const [products, categories] = await Promise.all([
+      selectCompanyRows<MockDatabaseState["products"][number]>("products", companyId, productListColumns, { limit: 500 }),
+      selectCompanyRows<MockDatabaseState["categories"][number]>("categories", companyId, tableColumns.categories, { orderBy: "sort_order", limit: 100 }),
+    ]);
+    return withDefaults({ ...base, products, categories });
+  }
+
+  if (screen === "categorias") {
+    const categories = await selectCompanyRows<MockDatabaseState["categories"][number]>("categories", companyId, tableColumns.categories, { orderBy: "sort_order", limit: 100 });
+    return withDefaults({ ...base, categories });
+  }
+
+  if (screen === "cupons") {
+    const coupons = await selectCompanyRows<MockDatabaseState["coupons"][number]>("coupons", companyId, tableColumns.coupons, { limit: 200 });
+    return withDefaults({ ...base, coupons });
+  }
+
+  if (screen === "relatorios") {
+    const [orders, cash_sales, reports] = await Promise.all([
+      selectCompanyRows<MockDatabaseState["orders"][number]>("orders", companyId, dashboardOrderColumns, { orderBy: "created_at", ascending: false, limit: 300 }),
+      selectCompanyRows<MockDatabaseState["cash_sales"][number]>("cash_sales", companyId, dashboardCashSaleColumns, { orderBy: "created_at", ascending: false, limit: 300 }),
+      selectCompanyRows<MockDatabaseState["reports"][number]>("reports", companyId, tableColumns.reports, { orderBy: "created_at", ascending: false, limit: 100 }),
+    ]);
+    return withDefaults({ ...base, orders, cash_sales, reports });
+  }
+
+  if (screen === "fretes") {
+    const delivery_zones = await selectCompanyRows<MockDatabaseState["delivery_zones"][number]>("delivery_zones", companyId, tableColumns.delivery_zones, { limit: 300 });
+    return withDefaults({ ...base, delivery_zones });
+  }
+
+  if (screen === "impressao") {
+    const print_settings = await selectCompanyRows<MockDatabaseState["print_settings"][number]>("print_settings", companyId, tableColumns.print_settings, { limit: 1 });
+    return withDefaults({ ...base, print_settings });
+  }
+
+  if (screen === "configuracoes") {
+    const [settings, print_settings, voucher_brands] = await Promise.all([
+      selectCompanyRows<MockDatabaseState["settings"][number]>("settings", companyId, tableColumns.settings, { limit: 1 }),
+      selectCompanyRows<MockDatabaseState["print_settings"][number]>("print_settings", companyId, tableColumns.print_settings, { limit: 1 }),
+      selectCompanyRows<MockDatabaseState["voucher_brands"][number]>("voucher_brands", companyId, tableColumns.voucher_brands, { limit: 100 }),
+    ]);
+    return withDefaults({ ...base, settings, print_settings, voucher_brands });
+  }
+
+  return withDefaults(base);
+}
+
+export async function loadCompanyRouteSnapshot(slug: string, includeAdminData = false, screen: AdminScreenName = includeAdminData ? "dashboard" : "login"): Promise<MockDatabaseState> {
   if (!isSupabaseConfigured) {
     if (allowLocalDatabaseFallback) return readFallbackSnapshot();
     throw new Error("Supabase nao configurado. Configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no ambiente de producao.");
@@ -715,8 +880,8 @@ export async function loadCompanyRouteSnapshot(slug: string, includeAdminData = 
     }
 
     const [{ data: company, error: companyError }, plans] = await Promise.all([
-      client.from("companies").select("*").eq("slug", slug).maybeSingle(),
-      selectAll<MockDatabaseState["plans"][number]>("plans"),
+      client.from("companies").select(companyAdminColumns).eq("slug", slug).maybeSingle(),
+      selectAll<MockDatabaseState["plans"][number]>("plans", tableColumns.plans),
     ]);
     if (companyError) throw companyError;
 
@@ -743,25 +908,29 @@ export async function loadCompanyRouteSnapshot(slug: string, includeAdminData = 
     }
 
     const companyId = (company as Company).id;
+    if (includeAdminData && STARTT_EMERGENCY_MODE) {
+      return loadAdminCompanyData(company as Company, plans, screen);
+    }
+
     const [categories, products, orders, customers, voucher_brands, delivery_zones, coupons, settings, print_settings] = await Promise.all([
-      client.from("categories").select("*").eq("company_id", companyId).order("sort_order"),
-      client.from("products").select("*").eq("company_id", companyId),
-      client.from("orders").select("*").eq("company_id", companyId).order("created_at", { ascending: false }),
-      client.from("customers").select("*").eq("company_id", companyId),
-      client.from("voucher_brands").select("*").eq("company_id", companyId),
-      client.from("delivery_zones").select("*").eq("company_id", companyId),
-      client.from("coupons").select("*").eq("company_id", companyId),
-      client.from("settings").select("*").eq("company_id", companyId),
-      client.from("print_settings").select("*").eq("company_id", companyId),
+      client.from("categories").select(tableColumns.categories).eq("company_id", companyId).order("sort_order"),
+      client.from("products").select(tableColumns.products).eq("company_id", companyId),
+      client.from("orders").select(tableColumns.orders).eq("company_id", companyId).order("created_at", { ascending: false }),
+      client.from("customers").select(tableColumns.customers).eq("company_id", companyId),
+      client.from("voucher_brands").select(tableColumns.voucher_brands).eq("company_id", companyId),
+      client.from("delivery_zones").select(tableColumns.delivery_zones).eq("company_id", companyId),
+      client.from("coupons").select(tableColumns.coupons).eq("company_id", companyId),
+      client.from("settings").select(tableColumns.settings).eq("company_id", companyId),
+      client.from("print_settings").select(tableColumns.print_settings).eq("company_id", companyId),
     ]);
 
     const adminResponses = includeAdminData
       ? await Promise.all([
-          client.from("users").select("*").eq("company_id", companyId),
-          client.from("order_items").select("*").eq("company_id", companyId),
-          client.from("cash_sales").select("*").eq("company_id", companyId),
-          client.from("reports").select("*").eq("company_id", companyId),
-          client.from("inventory_items").select("*").eq("company_id", companyId).order("updated_at", { ascending: false }),
+          client.from("users").select(tableColumns.users).eq("company_id", companyId),
+          client.from("order_items").select(tableColumns.order_items).eq("company_id", companyId),
+          client.from("cash_sales").select(tableColumns.cash_sales).eq("company_id", companyId),
+          client.from("reports").select(tableColumns.reports).eq("company_id", companyId),
+          client.from("inventory_items").select(tableColumns.inventory_items).eq("company_id", companyId).order("updated_at", { ascending: false }),
         ])
       : [];
     const [users, order_items, cash_sales, reports, inventory_items] = adminResponses;
@@ -774,20 +943,20 @@ export async function loadCompanyRouteSnapshot(slug: string, includeAdminData = 
       companies: [company as Company],
       plans,
       master_users: [],
-      users: (users?.data || []) as MockDatabaseState["users"],
-      categories: (categories.data || []) as MockDatabaseState["categories"],
-      products: (products.data || []) as MockDatabaseState["products"],
-      orders: (orders.data || []) as MockDatabaseState["orders"],
-      order_items: (order_items?.data || []) as MockDatabaseState["order_items"],
-      customers: (customers.data || []) as MockDatabaseState["customers"],
-      voucher_brands: (voucher_brands.data || []) as MockDatabaseState["voucher_brands"],
-      delivery_zones: (delivery_zones.data || []) as MockDatabaseState["delivery_zones"],
-      coupons: (coupons.data || []) as MockDatabaseState["coupons"],
-      settings: (settings.data || []) as MockDatabaseState["settings"],
-      cash_sales: (cash_sales?.data || []) as MockDatabaseState["cash_sales"],
-      print_settings: (print_settings.data || []) as MockDatabaseState["print_settings"],
-      reports: (reports?.data || []) as MockDatabaseState["reports"],
-      inventory_items: (inventory_items && !inventory_items.error ? inventory_items.data || [] : []) as MockDatabaseState["inventory_items"],
+      users: (users?.data || []) as unknown as MockDatabaseState["users"],
+      categories: (categories.data || []) as unknown as MockDatabaseState["categories"],
+      products: (products.data || []) as unknown as MockDatabaseState["products"],
+      orders: (orders.data || []) as unknown as MockDatabaseState["orders"],
+      order_items: (order_items?.data || []) as unknown as MockDatabaseState["order_items"],
+      customers: (customers.data || []) as unknown as MockDatabaseState["customers"],
+      voucher_brands: (voucher_brands.data || []) as unknown as MockDatabaseState["voucher_brands"],
+      delivery_zones: (delivery_zones.data || []) as unknown as MockDatabaseState["delivery_zones"],
+      coupons: (coupons.data || []) as unknown as MockDatabaseState["coupons"],
+      settings: (settings.data || []) as unknown as MockDatabaseState["settings"],
+      cash_sales: (cash_sales?.data || []) as unknown as MockDatabaseState["cash_sales"],
+      print_settings: (print_settings.data || []) as unknown as MockDatabaseState["print_settings"],
+      reports: (reports?.data || []) as unknown as MockDatabaseState["reports"],
+      inventory_items: (inventory_items && !inventory_items.error ? inventory_items.data || [] : []) as unknown as MockDatabaseState["inventory_items"],
     });
   } catch (error) {
     console.error("Falha ao carregar lancheria no Supabase.", error);

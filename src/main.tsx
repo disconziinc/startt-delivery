@@ -607,6 +607,7 @@ function App() {
   const parts = window.location.pathname.split("/").filter(Boolean);
   const companyRouteSlug = parts[0] && !["master", "sobre", "contatos"].includes(parts[0]) ? parts[0] : "";
   const companyRouteNeedsAdminData = Boolean(companyRouteSlug && parts[1] === "admin");
+  const companyRouteAdminScreen = (parts[1] === "admin" ? (parts[2] === "login" ? "login" : parts[2] || "dashboard") : "menu") as AdminScreen | "login" | "menu";
   const emergencyPublicRoute = Boolean(STARTT_EMERGENCY_MODE && companyRouteSlug && !companyRouteNeedsAdminData);
   const [dbState, setDbState] = useState<MockDatabaseState>(() => getCachedCompanyRouteSnapshot(companyRouteSlug) || getInitialDatabaseSnapshot());
   const [databaseReady, setDatabaseReady] = useState(false);
@@ -650,7 +651,7 @@ function App() {
     const loadingTimer = window.setTimeout(() => {
       if (alive) setShowRouteLoading(true);
     }, 700);
-    const primaryLoad = companyRouteSlug ? loadCompanyRouteSnapshot(companyRouteSlug, companyRouteNeedsAdminData) : loadDatabaseSnapshot();
+    const primaryLoad = companyRouteSlug ? loadCompanyRouteSnapshot(companyRouteSlug, companyRouteNeedsAdminData, companyRouteAdminScreen === "menu" ? "dashboard" : companyRouteAdminScreen) : loadDatabaseSnapshot();
     primaryLoad
       .then((snapshot) => {
         if (!alive) return;
@@ -658,7 +659,7 @@ function App() {
         if (companyRouteSlug && snapshot.companies.some((company) => company.slug === companyRouteSlug)) cacheCompanyRouteSnapshot(companyRouteSlug, snapshot);
         setDatabaseError("");
         setShowRouteLoading(false);
-        if (companyRouteSlug && !emergencyPublicRoute) {
+        if (companyRouteSlug && !emergencyPublicRoute && !companyRouteNeedsAdminData) {
           loadDatabaseSnapshot()
             .then((fullSnapshot) => {
               if (alive && !pendingSaveRef.current && !savingRef.current) setDbState(fullSnapshot);
@@ -677,7 +678,7 @@ function App() {
       alive = false;
       window.clearTimeout(loadingTimer);
     };
-  }, [companyRouteSlug, companyRouteNeedsAdminData]);
+  }, [companyRouteSlug, companyRouteNeedsAdminData, companyRouteAdminScreen, emergencyPublicRoute]);
 
   useEffect(() => {
     if (!databaseReady || !pendingSaveRef.current || savingRef.current) return;
@@ -698,15 +699,32 @@ function App() {
 
   useEffect(() => {
     if (emergencyPublicRoute) return;
+    if (companyRouteNeedsAdminData) {
+      if (companyRouteAdminScreen !== "pedidos") return;
+      const interval = window.setInterval(() => {
+        if (savingRef.current || pendingSaveRef.current || refreshInFlightRef.current) return;
+        refreshInFlightRef.current = true;
+        loadCompanyRouteSnapshot(companyRouteSlug, true, "pedidos")
+          .then((snapshot) => {
+            setDbState(snapshot);
+            setDatabaseError("");
+          })
+          .catch(() => setDatabaseError("Não foi possível atualizar pedidos. Atualize a tela se necessário."))
+          .finally(() => {
+            refreshInFlightRef.current = false;
+          });
+      }, 30000);
+      return () => window.clearInterval(interval);
+    }
     function refreshFromStorage(event?: StorageEvent) {
       if (event && event.key !== DATABASE_STORAGE_KEY && event.key !== DATABASE_CHANGE_PULSE_KEY) return;
       if (savingRef.current || pendingSaveRef.current) return;
-      (companyRouteSlug ? loadCompanyRouteSnapshot(companyRouteSlug, companyRouteNeedsAdminData) : loadDatabaseSnapshot()).then(setDbState);
+      (companyRouteSlug ? loadCompanyRouteSnapshot(companyRouteSlug, companyRouteNeedsAdminData, "dashboard") : loadDatabaseSnapshot()).then(setDbState);
     }
     function refreshFromBackend() {
       if (savingRef.current || pendingSaveRef.current || refreshInFlightRef.current) return;
       refreshInFlightRef.current = true;
-      (companyRouteSlug ? loadCompanyRouteSnapshot(companyRouteSlug, companyRouteNeedsAdminData) : loadDatabaseSnapshot())
+      (companyRouteSlug ? loadCompanyRouteSnapshot(companyRouteSlug, companyRouteNeedsAdminData, "dashboard") : loadDatabaseSnapshot())
         .then((snapshot) => {
           setDbState(snapshot);
           setDatabaseError("");
@@ -736,9 +754,10 @@ function App() {
       document.removeEventListener("visibilitychange", handleVisibility);
       window.clearInterval(interval);
     };
-  }, [companyRouteSlug, companyRouteNeedsAdminData, emergencyPublicRoute]);
+  }, [companyRouteSlug, companyRouteNeedsAdminData, companyRouteAdminScreen, emergencyPublicRoute]);
 
   useEffect(() => {
+    if (STARTT_EMERGENCY_MODE) return;
     if (!companyRouteSlug || !companyRouteNeedsAdminData || !isSupabaseConfigured || !supabase) return;
     const supabaseClient = supabase;
     const company = dbState.companies.find((item) => item.slug === companyRouteSlug);
